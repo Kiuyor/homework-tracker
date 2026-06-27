@@ -1,0 +1,5 @@
+node_modules/
+homework.db
+homework.db-shm
+homework.db-wal
+.reasonix/

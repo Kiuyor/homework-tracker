@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>班级作业墙</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,300,0,0" />
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 顶栏 -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="header-left">
+        <h1 class="logo"><span class="material-symbols-outlined logo-icon">school</span> 作业墙</h1>
+      </div>
+      <div class="header-center">
+        <div class="date-nav">
+          <button class="date-btn" id="prevDate"><span class="material-symbols-outlined">chevron_left</span></button>
+          <div class="date-display">
+            <input type="date" id="datePicker">
+            <span id="dateLabel"></span>
+          </div>
+          <button class="date-btn" id="nextDate"><span class="material-symbols-outlined">chevron_right</span></button>
+          <button class="date-btn today-btn" id="todayBtn">今天</button>
+        </div>
+      </div>
+      <div class="header-right">
+        <!-- 字号滑块 -->
+        <div class="font-size-control" title="调整字号">
+          <span class="material-symbols-outlined fs-icon">text_fields</span>
+          <input type="range" id="fontSizeSlider" min="14" max="40" value="22">
+          <span id="fontSizeLabel">22</span>
+        </div>
+        <!-- 布局预设 -->
+        <div class="layout-controls">
+          <button class="layout-btn active" data-layout="1" title="单列"><span class="material-symbols-outlined">view_list</span></button>
+          <button class="layout-btn" data-layout="2" title="双列"><span class="material-symbols-outlined">view_column</span></button>
+          <button class="layout-btn" data-layout="3" title="三列"><span class="material-symbols-outlined">grid_view</span></button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主内容 -->
+  <main class="main">
+    <!-- 顶部操作栏 -->
+    <section class="toolbar">
+      <div class="toolbar-left">
+        <span class="homework-count" id="homeworkCount">0 条作业</span>
+      </div>
+      <button class="add-btn" id="addBtn"><span class="material-symbols-outlined add-btn-icon">add</span> 添加作业</button>
+    </section>
+
+    <!-- 作业卡片墙 -->
+    <section class="card-wall" id="cardWall" data-layout="1">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon"><span class="material-symbols-outlined">dashboard_customize</span></div>
+        <p class="empty-text" id="emptyText">今天还没有作业<br>点击右上角添加吧！</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- 添加/编辑模态框 -->
+  <div class="modal-overlay hidden" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle">添加作业</h2>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
+      <form id="homeworkForm">
+        <input type="hidden" id="editId" value="">
+        <div class="form-group">
+          <label for="subjectSelect">科目</label>
+          <select id="subjectSelect" required></select>
+        </div>
+        <div class="form-group">
+          <label for="contentInput">作业内容</label>
+          <textarea id="contentInput" rows="3" placeholder="写作业内容..." required></textarea>
+        </div>
+        <div class="form-group">
+          <label for="noteInput">备注（可选）</label>
+          <input type="text" id="noteInput" placeholder="截止时间、注意事项等">
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-cancel" id="modalCancel">取消</button>
+          <button type="submit" class="btn-submit" id="modalSubmit">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast 通知 -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
