@@ -29,6 +29,14 @@
         </div>
       </div>
       <div class="header-right">
+        <!-- 暗色模式 -->
+        <button class="darkmode-btn" id="darkmodeBtn" title="暗色模式">
+          <span class="material-symbols-outlined">dark_mode</span>
+        </button>
+        <!-- 全屏显示模式 -->
+        <button class="fullscreen-btn" id="fullscreenBtn" title="全屏显示">
+          <span class="material-symbols-outlined">fullscreen</span>
+        </button>
         <!-- 字号滑块 -->
         <div class="font-size-control" title="调整字号">
           <span class="material-symbols-outlined fs-icon">text_fields</span>
@@ -52,11 +60,30 @@
       <div class="toolbar-left">
         <span class="homework-count" id="homeworkCount">0 条作业</span>
       </div>
-      <button class="add-btn" id="addBtn"><span class="material-symbols-outlined add-btn-icon">add</span> 添加作业</button>
+      <div class="toolbar-actions">
+        <button class="toolbar-btn" id="batchImportBtn">
+          <span class="material-symbols-outlined">auto_awesome</span> 批量导入
+        </button>
+        <button class="toolbar-btn" id="selectModeBtn">
+          <span class="material-symbols-outlined">checklist</span> 多选
+        </button>
+        <button class="toolbar-btn hidden" id="batchEditBtn">
+          <span class="material-symbols-outlined">edit_note</span><span class="batch-edit-label">批量编辑</span>
+        </button>
+        <button class="toolbar-btn toolbar-btn-primary" id="addBtn"><span class="material-symbols-outlined">add</span> 添加</button>
+      </div>
     </section>
+    <!-- 选中状态栏 -->
+    <div class="selection-bar hidden" id="selectionBar">
+      <span id="selectionCount">已选 0 项</span>
+      <div class="selection-actions">
+        <button class="clear-selection-btn" id="selectAllBtn">全选</button>
+        <button class="clear-selection-btn" id="clearSelection">取消选择</button>
+      </div>
+    </div>
 
     <!-- 作业卡片墙 -->
-    <section class="card-wall" id="cardWall" data-layout="1">
+    <section class="card-wall" id="cardWall" data-layout="3">
       <div class="empty-state" id="emptyState">
         <div class="empty-icon"><span class="material-symbols-outlined">dashboard_customize</span></div>
         <p class="empty-text" id="emptyText">今天还没有作业<br>点击右上角添加吧！</p>
@@ -90,6 +117,55 @@
           <button type="submit" class="btn-submit" id="modalSubmit">保存</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- 批量导入模态框 -->
+  <div class="modal-overlay hidden" id="batchModalOverlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h2>批量导入作业</h2>
+        <button class="modal-close" id="batchModalClose">&times;</button>
+      </div>
+      <div class="modal-body" id="batchModalBody">
+        <p class="batch-hint">每行一条，格式：<strong>科目：作业内容 | 备注（可选）</strong></p>
+        <textarea id="batchInput" rows="10" placeholder="语文：完成一套高考模拟卷（含现代文阅读、古诗文阅读，作文除外）
+数学：完成一张函数与导数专题综合试卷（含12道选择题、4道填空题、3道解答题）| 重点复习导数应用
+英语：完成一套阅读理解（4篇）+ 完形填空（1篇）+ 语法填空（1篇）组合练习
+物理：完成一份动量守恒与能量守恒综合计算题专练（共6道大题）
+化学：完成一份化工流程题与实验综合题练习卷（含选择题和非选择题）| 注意化工流程图
+生物：完成一套遗传规律与生态系统能量流动专项练习题（含选择和非选择题）"></textarea>
+        <div class="form-actions">
+          <button type="button" class="btn-cancel" id="batchCancel">取消</button>
+          <button type="button" class="btn-submit" id="batchSubmit"><span class="material-symbols-outlined" style="font-size:1rem;">auto_awesome</span> 开始导入</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 批量编辑模态框 -->
+  <div class="modal-overlay hidden" id="batchEditOverlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h2>批量编辑 (<span id="batchEditCount">0</span> 项)</h2>
+        <button class="modal-close" id="batchEditClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="batchEditNote">统一设置备注</label>
+          <input type="text" id="batchEditNote" placeholder="输入备注内容，所有选中作业将被设置为此备注">
+        </div>
+        <div class="form-group">
+          <label for="batchEditSubject">统一修改科目</label>
+          <select id="batchEditSubject">
+            <option value="">— 不修改科目 —</option>
+          </select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-cancel" id="batchEditCancel">取消</button>
+          <button type="button" class="btn-submit" id="batchEditSave">✏️ 更新 <span id="batchEditSaveCount">0</span> 项</button>
+        </div>
+      </div>
     </div>
   </div>
 

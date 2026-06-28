@@ -4,9 +4,9 @@
 
 ## 技术栈
 
-- **后端**: Node.js + Express + SQLite（better-sqlite3）
+- **后端**: Node.js + Express + PostgreSQL（@vercel/postgres）
 - **前端**: 纯 HTML + CSS + JavaScript（单页应用）
-- **部署**: 支持一键部署到 Railway / Render
+- **部署**: 支持一键部署到 **Vercel** / Railway / Zeabur / 阿里云 FC
 
 ## 快速启动
 
@@ -27,45 +27,80 @@ npm start
 
 ## 部署指南
 
-### 部署到 Railway（推荐）
+### 部署到 Vercel（推荐）
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template)
+本项目已适配 **Vercel + Vercel Postgres**（Serverless PostgreSQL）。
 
-1. 将本项目推送到 GitHub 仓库
-2. 登录 [Railway](https://railway.app) → 点击 "New Project"
-3. 选择 "Deploy from GitHub repo" → 关联你的仓库
-4. Railway 会自动检测 Node.js 项目并部署
-5. 部署完成后，Railway 会生成一个公开 URL（如 `https://your-app.up.railway.app`）
+#### 一键部署步骤
 
-**无需任何配置**，项目已自带 `start` 脚本和 `PORT` 环境变量支持。
+```bash
+# 1. 将代码推送到 GitHub
+git init
+git add .
+git commit -m "init"
+git remote add origin https://github.com/<你的用户名>/homework-tracker.git
+git push -u origin main
 
-### 部署到 Render
+# 2. 登录 Vercel → Import 你的 GitHub 仓库
+# 3. 创建 Postgres 数据库：
+#    Vercel 控制台 → Storage → Create Database → Postgres
+#    选择区域（建议选最接近你的区域）
+# 4. Vercel 自动检测项目的 vercel.json 并部署
+# 5. 在项目 Settings → Environment Variables 中确认
+#    Vercel 已自动注入 POSTGRES_* 系列变量
+# 6. 重新部署一次以应用环境变量
+```
 
-1. 将本项目推送到 GitHub 仓库
-2. 登录 [Render](https://render.com) → 点击 "New +" → "Web Service"
-3. 关联你的 GitHub 仓库
-4. 配置：
-   - **Name**: `homework-tracker`（或你喜欢的名字）
-   - **Region**: 选择离你最近的区域
-   - **Branch**: `main`
-   - **Build Command**: `npm install`
-   - **Start Command**: `npm start`
-   - **Plan**: Free
-5. 点击 "Create Web Service"
-6. 部署完成后，Render 会生成一个公开 URL（如 `https://homework-tracker.onrender.com`）
+**部署成功后：** Vercel 分配 `https://homework-tracker.vercel.app` 域名，可直接访问。
+
+#### 本地开发
+
+```bash
+# 1. 安装依赖
+npm install
+
+# 2. 从 Vercel Postgres 面板复制连接信息到 .env 文件
+#    （参考 .env.example）
+
+# 3. 启动开发服务器
+npm start
+
+# 4. 浏览器访问
+# http://localhost:3000
+```
+
+> 💡 **注意：** 数据库已从 SQLite 迁移到 PostgreSQL（Vercel Postgres），本地开发需要可用的 PostgreSQL 实例或使用 Vercel 提供的远程连接。
+
+### 其他平台
+
+更多部署方案（Zeabur / 阿里云 FC / 腾讯云 SCF / 轻量服务器等）请参考 `DEPLOY_ALIYUN_FC.md`。
+
+### 数据持久化说明
+
+| 部署平台 | 数据库 | 持久化方式 |
+|----------|--------|-----------|
+| **Vercel** ✅ | PostgreSQL | Vercel Postgres（免费额度 256MB） |
+| **Zeabur** | SQLite | Zeabur Storage 挂载卷 |
+| **阿里云 FC** | SQLite | NAS 文件存储 |
+| **轻量服务器** | SQLite | 服务器本地硬盘 |
 
 ## 项目结构
 
 ```
 homework-tracker/
 ├── package.json          # 项目配置与依赖
-├── server.js             # Express 服务端入口 + API 路由
-├── db.js                 # SQLite 数据库初始化与种子数据
-├── homework.db           # SQLite 数据库文件（自动生成）
+├── server.js             # 本地开发启动入口
+├── api/
+│   └── index.js          # Vercel Serverless Function（Express 应用）
+├── db.js                 # PostgreSQL 数据库封装（@vercel/postgres）
+├── vercel.json           # Vercel 部署配置
 ├── public/               # 前端静态文件
 │   ├── index.html        # 页面结构
 │   ├── style.css         # 样式（现代化设计，响应式）
 │   └── app.js            # 前端逻辑（状态管理、API 调用）
+├── .env.example          # 环境变量模板
+├── .vercelignore         # Vercel 部署忽略列表
+├── DEPLOY_ALIYUN_FC.md   # 阿里云函数计算部署方案
 └── README.md             # 本文件
 ```
 

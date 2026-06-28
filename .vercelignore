@@ -1,0 +1,11 @@
+# Vercel deployment ignore
+node_modules/
+.git/
+.gitignore
+*.md
+.env
+.env.example
+homework.db
+homework.db-shm
+homework.db-wal
+.DS_Store

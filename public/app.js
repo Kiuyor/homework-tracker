@@ -5,8 +5,9 @@ const state = {
   subjects: [],
   editingId: null,
   fontSize: 22,
-  layout: 3,       // 1=单列, 2=双列, 3=三列
-  dragSrcId: null,  // 拖动源卡片 ID
+  layout: 3,
+  dragSrcId: null,
+  selected: new Set(),
 };
 
 // ============ DOM References ============
@@ -35,6 +36,7 @@ const dom = {
   contentInput: $('#contentInput'),
   noteInput: $('#noteInput'),
   toastContainer: $('#toastContainer'),
+  darkmodeBtn: $('#darkmodeBtn'),
 };
 
 // ============ Date Helpers ============
@@ -140,9 +142,11 @@ function renderHomeworks() {
   dom.cardWall.innerHTML = '';
 
   if (state.homeworks.length === 0) {
-    const empty = dom.emptyState.cloneNode(true);
-    empty.style.display = 'block';
-    dom.cardWall.appendChild(empty);
+    dom.cardWall.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon"><span class="material-symbols-outlined">dashboard_customize</span></div>
+        <p class="empty-text">今天还没有作业<br>点击右上角添加吧！</p>
+      </div>`;
     dom.homeworkCount.textContent = '0 条作业';
     return;
   }
@@ -156,6 +160,9 @@ function renderHomeworks() {
     card.dataset.id = hw.id;
 
     card.innerHTML = `
+      <div class="card-select" data-id="${hw.id}">
+        <span class="material-symbols-outlined select-icon">check_circle</span>
+      </div>
       <div class="card-top">
         <div class="card-actions">
           <button class="card-action-btn edit" data-id="${hw.id}" title="编辑"><span class="material-symbols-outlined">edit</span></button>
@@ -167,6 +174,14 @@ function renderHomeworks() {
       ${hw.note ? `<div class="card-note">${escapeHtml(hw.note)}</div>` : ''}
       <div class="card-drag-handle" title="拖动排序"><span class="material-symbols-outlined">drag_indicator</span></div>
     `;
+
+    // 选中状态
+    if (state.selected.has(hw.id)) {
+      card.classList.add('selected');
+    }
+
+    // 选择复选框
+    card.querySelector('.card-select').addEventListener('click', () => toggleSelect(hw.id));
 
     // === 事件绑定 ===
     // 编辑
@@ -360,7 +375,7 @@ function openEditModal(hw) {
   state.editingId = hw.id;
   dom.modalTitle.textContent = '编辑作业';
   dom.editId.value = hw.id;
-  dom.subjectSelect.value = hw.subject_id || state.subjects[0]?.id || '';
+  dom.subjectSelect.value = hw.subject_id ?? state.subjects[0]?.id ?? '';
   dom.contentInput.value = hw.content;
   dom.noteInput.value = hw.note || '';
   dom.modalOverlay.classList.remove('hidden');
@@ -402,8 +417,207 @@ dom.datePicker.addEventListener('change', () => {
   }
 });
 
+// ============ Batch Import ============
+dom.batchImportBtn = $('#batchImportBtn');
+dom.batchModalOverlay = $('#batchModalOverlay');
+dom.batchInput = $('#batchInput');
+dom.batchSubmit = $('#batchSubmit');
+dom.batchCancel = $('#batchCancel');
+dom.batchModalClose = $('#batchModalClose');
+
+function openBatchImport() {
+  dom.batchInput.value = '';
+  dom.batchModalOverlay.classList.remove('hidden');
+  dom.batchInput.focus();
+}
+
+function closeBatchImport() {
+  dom.batchModalOverlay.classList.add('hidden');
+}
+
+async function parseAndImport() {
+  const text = dom.batchInput.value.trim();
+  if (!text) {
+    showToast('请输入作业内容', 'error');
+    return;
+  }
+
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  let success = 0;
+  let errors = [];
+
+  for (const line of lines) {
+    const colonIdx = line.indexOf('：');
+    if (colonIdx === -1) {
+      errors.push(`「${line.slice(0, 20)}...」缺少科目分隔符`);
+      continue;
+    }
+    const subjectName = line.slice(0, colonIdx).trim();
+    let rest = line.slice(colonIdx + 1).trim();
+    let content = rest;
+    let note = '';
+
+    // 支持用 | 分隔备注
+    const pipeIdx = rest.lastIndexOf('|');
+    if (pipeIdx > 0) {
+      content = rest.slice(0, pipeIdx).trim();
+      note = rest.slice(pipeIdx + 1).trim();
+    }
+
+    if (!content) {
+      errors.push(`「${subjectName}」作业内容为空`);
+      continue;
+    }
+
+    const subj = state.subjects.find(s => s.name === subjectName);
+    try {
+      await addHomework({
+        subject_id: subj ? subj.id : null,
+        content: content,
+        date: formatDate(state.currentDate),
+        note: note,
+      });
+      success++;
+    } catch (err) {
+      errors.push(`「${subjectName}」导入失败: ${err.message}`);
+    }
+  }
+
+  closeBatchImport();
+  const msg = errors.length === 0
+    ? `✅ 成功导入 ${success} 条作业`
+    : `✅ 导入 ${success} 条，${errors.length} 条失败`;
+  showToast(msg, errors.length ? 'error' : 'success');
+  loadHomeworks();
+}
+
+dom.batchImportBtn.addEventListener('click', openBatchImport);
+dom.batchSubmit.addEventListener('click', parseAndImport);
+dom.batchCancel.addEventListener('click', closeBatchImport);
+dom.batchModalClose.addEventListener('click', closeBatchImport);
+dom.batchModalOverlay.addEventListener('click', (e) => {
+  if (e.target === dom.batchModalOverlay) closeBatchImport();
+});
+
+// Select mode
+dom.selectModeBtn = $('#selectModeBtn');
+dom.selectModeBtn.addEventListener('click', () => {
+  dom.selectModeBtn.classList.toggle('active');
+  dom.cardWall.classList.toggle('select-mode');
+  if (dom.selectModeBtn.classList.contains('active')) {
+    dom.selectionBar.classList.remove('hidden');
+  } else {
+    state.selected.clear();
+    dom.selectionBar.classList.add('hidden');
+    loadHomeworks();
+  }
+  updateSelectionUI();
+});
+
+// ============ Batch Edit ============
+dom.batchEditBtn = $('#batchEditBtn');
+dom.selectionBar = $('#selectionBar');
+dom.selectionCount = $('#selectionCount');
+dom.selectAllBtn = $('#selectAllBtn');
+dom.clearSelection = $('#clearSelection');
+dom.batchEditOverlay = $('#batchEditOverlay');
+dom.batchEditClose = $('#batchEditClose');
+dom.batchEditCancel = $('#batchEditCancel');
+dom.batchEditSave = $('#batchEditSave');
+dom.batchEditNote = $('#batchEditNote');
+dom.batchEditSubject = $('#batchEditSubject');
+dom.batchEditCount = $('#batchEditCount');
+dom.batchEditSaveCount = $('#batchEditSaveCount');
+
+function updateSelectionUI() {
+  const count = state.selected.size;
+  dom.selectionBar.classList.toggle('hidden', count === 0);
+  dom.batchEditBtn.classList.toggle('hidden', count === 0);
+  dom.selectionCount.textContent = `已选 ${count} 项`;
+  // 更新按钮文字，保留图标
+  const txt = dom.batchEditBtn.querySelector('.batch-edit-label');
+  if (txt) txt.textContent = `批量编辑 (${count})`;
+}
+
+function toggleSelect(id) {
+  if (state.selected.has(id)) state.selected.delete(id);
+  else state.selected.add(id);
+  updateSelectionUI();
+  loadHomeworks();
+}
+
+dom.selectAllBtn.addEventListener('click', () => {
+  const allIds = state.homeworks.map(h => h.id);
+  const allSelected = allIds.every(id => state.selected.has(id));
+  if (allSelected) {
+    state.selected.clear();
+    dom.selectAllBtn.textContent = '全选';
+  } else {
+    allIds.forEach(id => state.selected.add(id));
+    dom.selectAllBtn.textContent = '取消全选';
+  }
+  updateSelectionUI();
+  loadHomeworks();
+});
+
+dom.clearSelection.addEventListener('click', () => {
+  state.selected.clear();
+  updateSelectionUI();
+  loadHomeworks();
+});
+
+dom.batchEditBtn.addEventListener('click', () => {
+  dom.batchEditNote.value = '';
+  dom.batchEditSubject.value = '';
+  dom.batchEditCount.textContent = state.selected.size;
+  dom.batchEditSaveCount.textContent = state.selected.size;
+  // 填充科目下拉
+  dom.batchEditSubject.innerHTML = '<option value="">— 不修改科目 —</option>' +
+    state.subjects.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  dom.batchEditOverlay.classList.remove('hidden');
+});
+
+dom.batchEditClose.addEventListener('click', () => dom.batchEditOverlay.classList.add('hidden'));
+dom.batchEditCancel.addEventListener('click', () => dom.batchEditOverlay.classList.add('hidden'));
+dom.batchEditOverlay.addEventListener('click', (e) => {
+  if (e.target === dom.batchEditOverlay) dom.batchEditOverlay.classList.add('hidden');
+});
+
+dom.batchEditSave.addEventListener('click', async () => {
+  const note = dom.batchEditNote.value.trim();
+  const subjectId = parseInt(dom.batchEditSubject.value);
+  const ids = [...state.selected];
+  let success = 0;
+
+  for (const id of ids) {
+    const updates = {};
+    if (note) updates.note = note;
+    if (subjectId) updates.subject_id = subjectId;
+    if (Object.keys(updates).length === 0) continue;
+    try {
+      await updateHomework(id, updates);
+      success++;
+    } catch { /* skip failed */ }
+  }
+
+  dom.batchEditOverlay.classList.add('hidden');
+  state.selected.clear();
+  updateSelectionUI();
+  showToast(`已更新 ${success} 项`, 'success');
+  loadHomeworks();
+});
+
 // Add
 dom.addBtn.addEventListener('click', openAddModal);
+
+// Fullscreen
+dom.fullscreenBtn = $('#fullscreenBtn');
+dom.fullscreenBtn.addEventListener('click', toggleFullscreen);
+
+document.addEventListener('fullscreenchange', onFullscreenChange);
+
+// Dark mode toggle
+dom.darkmodeBtn.addEventListener('click', toggleDarkMode);
 
 // Modal
 dom.modalClose.addEventListener('click', closeModal);
@@ -455,6 +669,69 @@ dom.layoutBtns.forEach(btn => {
   });
 });
 
+// ============ Dark Mode ============
+function toggleDarkMode() {
+  const isDark = document.body.classList.toggle('dark-mode');
+  document.body.classList.toggle('light-mode', !isDark);
+  dom.darkmodeBtn.querySelector('.material-symbols-outlined').textContent =
+    isDark ? 'light_mode' : 'dark_mode';
+  localStorage.setItem('hw_darkmode', isDark ? '1' : '0');
+}
+
+// ============ Fullscreen Display Mode ============
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.body.requestFullscreen().catch(() => {});
+    enterDisplayMode();
+  } else {
+    document.exitFullscreen().catch(() => {});
+    exitDisplayMode();
+  }
+}
+
+function onFullscreenChange() {
+  if (!document.fullscreenElement) {
+    exitDisplayMode();
+  }
+}
+
+function enterDisplayMode() {
+  document.body.classList.add('display-mode');
+  setLayout(3);
+  fitCardsToScreen();
+  dom.fullscreenBtn.innerHTML = '<span class="material-symbols-outlined">fullscreen_exit</span>';
+  dom.fullscreenBtn.title = '退出全屏';
+}
+
+function fitCardsToScreen() {
+  const cards = document.querySelectorAll('.homework-card');
+  if (cards.length === 0) return;
+
+  const vh = window.innerHeight;
+  const rows = Math.ceil(cards.length / 3);
+  const cardH = (vh - 80) / rows - 14;
+  const fontSize = Math.max(16, Math.min(38, Math.floor(cardH / 4)));
+
+  applyFontSize(fontSize);
+}
+
+function exitDisplayMode() {
+  document.body.classList.remove('display-mode');
+  const saved = JSON.parse(localStorage.getItem('hw_prefs') || '{}');
+  applyFontSize(saved.fontSize || 22);
+  dom.fontSizeSlider.value = state.fontSize;
+  dom.fontSizeLabel.textContent = state.fontSize;
+  dom.fullscreenBtn.innerHTML = '<span class="material-symbols-outlined">fullscreen</span>';
+  dom.fullscreenBtn.title = '全屏显示';
+}
+
+// 全屏时窗口缩放重新适配
+window.addEventListener('resize', () => {
+  if (document.body.classList.contains('display-mode')) {
+    fitCardsToScreen();
+  }
+});
+
 // ============ Init ============
 async function init() {
   // 读取保存的偏好
@@ -468,6 +745,19 @@ async function init() {
 
   dom.fontSizeSlider.value = state.fontSize;
   dom.fontSizeLabel.textContent = state.fontSize;
+
+  // 暗色模式
+  const darkPref = localStorage.getItem('hw_darkmode');
+  if (darkPref === '1') {
+    document.body.classList.add('dark-mode');
+    dom.darkmodeBtn.querySelector('.material-symbols-outlined').textContent = 'light_mode';
+  } else if (darkPref === '0') {
+    document.body.classList.add('light-mode');
+  } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    // 系统暗色，同步图标
+    dom.darkmodeBtn.querySelector('.material-symbols-outlined').textContent = 'light_mode';
+  }
+  // 未设置时跟随系统 (prefers-color-scheme: dark CSS 自动处理)
 
   // 加载科目
   try {
