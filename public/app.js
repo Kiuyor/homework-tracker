@@ -784,14 +784,16 @@ async function init() {
       dom.subjectSelect.appendChild(opt);
     });
   } catch (e) {
-    /* 科目加载失败也可用 */
+    console.warn('科目加载失败，请检查数据库连接:', e.message);
+    showToast('科目加载失败，请检查数据库连接', 'error');
   }
 
   updateDateDisplay();
   try {
     await loadHomeworks();
   } catch (e) {
-    /* 作业加载失败也继续运行 */
+    console.warn('作业加载失败:', e.message);
+    showToast('作业加载失败: ' + e.message, 'error');
   }
 }
 

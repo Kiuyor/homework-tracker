@@ -1,92 +1,97 @@
-const { sql } = require('@vercel/postgres');
+const { Pool } = require('pg');
 
+let pool = null;
 let initialized = false;
 
-// 将 SQLite 的 ? 占位符转换为 PostgreSQL 的 $1, $2 格式
-function convertParams(queryText, params) {
-  let index = 0;
-  const text = queryText.replace(/\?/g, () => `$${++index}`);
-  return { text, params: params || [] };
+function getPool() {
+  if (!pool) {
+    const connectionString = process.env.POSTGRES_URL;
+    if (!connectionString) {
+      throw new Error('未设置 POSTGRES_URL 环境变量');
+    }
+    pool = new Pool({ connectionString });
+  }
+  return pool;
 }
 
 /**
- * 查询多行（兼容 better-sqlite3 的 .all() 语义）
+ * 查询多行
  */
 async function all(queryText, ...params) {
   await ensureInit();
-  const { text, params: values } = convertParams(queryText, params);
-  const { rows } = await sql.query(text, values);
-  return rows;
+  const result = await getPool().query(queryText, params);
+  return result.rows;
 }
 
 /**
- * 查询第一行（兼容 better-sqlite3 的 .get() 语义）
+ * 查询第一行
  */
 async function get(queryText, ...params) {
   await ensureInit();
-  const { text, params: values } = convertParams(queryText, params);
-  const { rows } = await sql.query(text, values);
-  return rows[0] || undefined;
+  const result = await getPool().query(queryText, params);
+  return result.rows[0] || undefined;
 }
 
 /**
- * 执行写入（兼容 better-sqlite3 的 .run() 语义）
+ * 执行写入
  */
 async function run(queryText, ...params) {
   await ensureInit();
-  const { text, params: values } = convertParams(queryText, params);
-  const result = await sql.query(text, values);
-  // 如果有 RETURNING 子句，返回插入的行
-  if (/RETURNING\s/i.test(text) && result.rows.length > 0) {
+  const result = await getPool().query(queryText, params);
+  if (/RETURNING\s/i.test(queryText) && result.rows.length > 0) {
     return { lastInsertRowid: result.rows[0].id, rows: result.rows };
   }
   return { lastInsertRowid: undefined, changes: result.rowCount };
 }
 
 /**
- * 事务包装（兼容 better-sqlite3 的 .transaction() 语义）
+ * 事务包装
  */
 function transaction(fn) {
   return async (...args) => {
     await ensureInit();
-    await sql.query('BEGIN');
+    const client = await getPool().connect();
     try {
+      await client.query('BEGIN');
       const result = await fn(...args);
-      await sql.query('COMMIT');
+      await client.query('COMMIT');
       return result;
     } catch (err) {
-      await sql.query('ROLLBACK');
+      await client.query('ROLLBACK');
       throw err;
+    } finally {
+      client.release();
     }
   };
 }
 
 async function initTables() {
-  await sql.query(`
-    CREATE TABLE IF NOT EXISTS subjects (
-      id SERIAL PRIMARY KEY,
-      name VARCHAR(100) NOT NULL UNIQUE,
-      sort_order INTEGER NOT NULL DEFAULT 0
-    )
-  `);
-
-  await sql.query(`
-    CREATE TABLE IF NOT EXISTS homeworks (
-      id SERIAL PRIMARY KEY,
-      subject_id INTEGER REFERENCES subjects(id),
-      content TEXT NOT NULL,
-      date DATE NOT NULL,
-      completed INTEGER NOT NULL DEFAULT 0,
-      note TEXT DEFAULT '',
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // 创建触发器函数和触发器，使得 updated_at 自动更新
+  const client = await getPool().connect();
   try {
-    await sql.query(`
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS subjects (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL UNIQUE,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS homeworks (
+        id SERIAL PRIMARY KEY,
+        subject_id INTEGER REFERENCES subjects(id),
+        content TEXT NOT NULL,
+        date DATE NOT NULL,
+        completed INTEGER NOT NULL DEFAULT 0,
+        note TEXT DEFAULT '',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // updated_at 自动更新触发器
+    await client.query(`
       CREATE OR REPLACE FUNCTION update_updated_at_column()
       RETURNS TRIGGER AS $$
       BEGIN
@@ -95,7 +100,7 @@ async function initTables() {
       END;
       $$ language 'plpgsql'
     `);
-    await sql.query(`
+    await client.query(`
       DO $$
       BEGIN
         IF NOT EXISTS (
@@ -110,20 +115,20 @@ async function initTables() {
       END;
       $$
     `);
-  } catch (e) {
-    // 触发器已存在则忽略
+  } finally {
+    client.release();
   }
 }
 
 async function seedSubjects() {
-  const { rows } = await sql.query('SELECT COUNT(*)::int as cnt FROM subjects');
+  const { rows } = await getPool().query('SELECT COUNT(*)::int as cnt FROM subjects');
   if (rows[0].cnt === 0) {
     const subjects = [
       '语文', '数学', '英语', '物理', '化学',
       '生物', '历史', '政治', '地理', '其他'
     ];
     for (let i = 0; i < subjects.length; i++) {
-      await sql.query(
+      await getPool().query(
         'INSERT INTO subjects (name, sort_order) VALUES ($1, $2)',
         [subjects[i], i]
       );
@@ -133,7 +138,7 @@ async function seedSubjects() {
 
 async function ensureInit() {
   if (initialized) return;
-  initialized = true; // 先标记已初始化，防止并发重复执行
+  initialized = true; // 先标记，防止并发重复执行
   try {
     await initTables();
     await seedSubjects();
@@ -145,11 +150,16 @@ async function ensureInit() {
   }
 }
 
+// 暴露一个 sql.query 兼容接口（方便未来迁移）
+const sql = {
+  query: (text, params) => getPool().query(text, params),
+};
+
 module.exports = {
-  sql,         // 底层 @vercel/postgres sql 标签函数
-  all,         // 查询多行 → Promise<rows[]>
-  get,         // 查询单行 → Promise<row|undefined>
-  run,         // 写入操作 → Promise<{lastInsertRowid, changes}>
-  transaction, // 事务包装 → (fn) => async (...args) => result
-  ensureInit,  // 手动触发初始化
+  sql,
+  all,
+  get,
+  run,
+  transaction,
+  ensureInit,
 };
