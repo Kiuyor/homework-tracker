@@ -37,6 +37,30 @@ const dom = {
   noteInput: $('#noteInput'),
   toastContainer: $('#toastContainer'),
   darkmodeBtn: $('#darkmodeBtn'),
+  // 批量导入
+  batchImportBtn: $('#batchImportBtn'),
+  batchModalOverlay: $('#batchModalOverlay'),
+  batchInput: $('#batchInput'),
+  batchSubmit: $('#batchSubmit'),
+  batchCancel: $('#batchCancel'),
+  batchModalClose: $('#batchModalClose'),
+  // 多选 & 批量编辑
+  selectModeBtn: $('#selectModeBtn'),
+  batchEditBtn: $('#batchEditBtn'),
+  selectionBar: $('#selectionBar'),
+  selectionCount: $('#selectionCount'),
+  selectAllBtn: $('#selectAllBtn'),
+  clearSelection: $('#clearSelection'),
+  batchEditOverlay: $('#batchEditOverlay'),
+  batchEditClose: $('#batchEditClose'),
+  batchEditCancel: $('#batchEditCancel'),
+  batchEditSave: $('#batchEditSave'),
+  batchEditNote: $('#batchEditNote'),
+  batchEditSubject: $('#batchEditSubject'),
+  batchEditCount: $('#batchEditCount'),
+  batchEditSaveCount: $('#batchEditSaveCount'),
+  // 全屏
+  fullscreenBtn: $('#fullscreenBtn'),
 };
 
 // ============ Date Helpers ============
@@ -428,13 +452,6 @@ dom.datePicker.addEventListener('change', () => {
 });
 
 // ============ Batch Import ============
-dom.batchImportBtn = $('#batchImportBtn');
-dom.batchModalOverlay = $('#batchModalOverlay');
-dom.batchInput = $('#batchInput');
-dom.batchSubmit = $('#batchSubmit');
-dom.batchCancel = $('#batchCancel');
-dom.batchModalClose = $('#batchModalClose');
-
 function openBatchImport() {
   dom.batchInput.value = '';
   dom.batchModalOverlay.classList.remove('hidden');
@@ -510,7 +527,6 @@ dom.batchModalOverlay.addEventListener('click', (e) => {
 });
 
 // Select mode
-dom.selectModeBtn = $('#selectModeBtn');
 dom.selectModeBtn.addEventListener('click', () => {
   dom.selectModeBtn.classList.toggle('active');
   dom.cardWall.classList.toggle('select-mode');
@@ -525,20 +541,6 @@ dom.selectModeBtn.addEventListener('click', () => {
 });
 
 // ============ Batch Edit ============
-dom.batchEditBtn = $('#batchEditBtn');
-dom.selectionBar = $('#selectionBar');
-dom.selectionCount = $('#selectionCount');
-dom.selectAllBtn = $('#selectAllBtn');
-dom.clearSelection = $('#clearSelection');
-dom.batchEditOverlay = $('#batchEditOverlay');
-dom.batchEditClose = $('#batchEditClose');
-dom.batchEditCancel = $('#batchEditCancel');
-dom.batchEditSave = $('#batchEditSave');
-dom.batchEditNote = $('#batchEditNote');
-dom.batchEditSubject = $('#batchEditSubject');
-dom.batchEditCount = $('#batchEditCount');
-dom.batchEditSaveCount = $('#batchEditSaveCount');
-
 function updateSelectionUI() {
   const count = state.selected.size;
   dom.selectionBar.classList.toggle('hidden', count === 0);
@@ -621,7 +623,6 @@ dom.batchEditSave.addEventListener('click', async () => {
 dom.addBtn.addEventListener('click', openAddModal);
 
 // Fullscreen
-dom.fullscreenBtn = $('#fullscreenBtn');
 dom.fullscreenBtn.addEventListener('click', toggleFullscreen);
 
 document.addEventListener('fullscreenchange', onFullscreenChange);

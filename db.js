@@ -53,7 +53,8 @@ function transaction(fn) {
     const client = await getPool().connect();
     try {
       await client.query('BEGIN');
-      const result = await fn(...args);
+      // 传递事务 client，使回调内的查询在同一连接上执行
+      const result = await fn(client, ...args);
       await client.query('COMMIT');
       return result;
     } catch (err) {

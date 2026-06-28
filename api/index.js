@@ -63,29 +63,45 @@ app.post('/api/homeworks', async (req, res) => {
       return res.status(400).json({ success: false, error: '内容和日期为必填项' });
     }
 
-    const insertHomework = db.transaction(async () => {
-      // 获取该日期的最大 sort_order
-      const maxSortRow = await db.get(
-        'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM homeworks WHERE date = $1',
-        date
+    // 验证 subject_id 存在性
+    if (subject_id) {
+      const subjExists = await db.get('SELECT id FROM subjects WHERE id = $1', subject_id);
+      if (!subjExists) {
+        return res.status(400).json({ success: false, error: '所选科目不存在' });
+      }
+    }
+
+    // 限制内容长度，防止恶意超大请求
+    if (content.length > 5000) {
+      return res.status(400).json({ success: false, error: '作业内容不能超过5000字' });
+    }
+    if (note && note.length > 2000) {
+      return res.status(400).json({ success: false, error: '备注不能超过2000字' });
+    }
+
+    const insertHomework = db.transaction(async (client) => {
+      // FOR UPDATE 锁住该日期的行，防止并发读取 MAX(sort_order) 产生 TOCTOU 竞态
+      const maxSortResult = await client.query(
+        'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM homeworks WHERE date = $1 FOR UPDATE',
+        [date]
       );
-      const nextSort = parseInt(maxSortRow.next) || 0;
+      const nextSort = parseInt(maxSortResult.rows[0].next) || 0;
 
       // 插入并返回新记录
-      const result = await db.run(
+      const insertResult = await client.query(
         `INSERT INTO homeworks (subject_id, content, date, note, sort_order)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING id, subject_id, content, date, completed, note, sort_order, created_at, updated_at`,
-        subject_id || null, content, date, note || '', nextSort
+        [subject_id || null, content, date, note || '', nextSort]
       );
 
-      const newRow = result.rows[0];
+      const newRow = insertResult.rows[0];
 
-      // 补充 subject_name
+      // 补充 subject_name（在事务内查询，保证一致性）
       let subjectName = '';
       if (newRow.subject_id) {
-        const subj = await db.get('SELECT name FROM subjects WHERE id = $1', newRow.subject_id);
-        subjectName = subj ? subj.name : '';
+        const subjResult = await client.query('SELECT name FROM subjects WHERE id = $1', [newRow.subject_id]);
+        subjectName = subjResult.rows[0] ? subjResult.rows[0].name : '';
       }
 
       return { ...newRow, subject_name: subjectName };
@@ -108,9 +124,9 @@ app.put('/api/homeworks/reorder', async (req, res) => {
       return res.status(400).json({ success: false, error: 'orders 必须为数组' });
     }
 
-    const batch = db.transaction(async (items) => {
+    const batch = db.transaction(async (client, items) => {
       for (const item of items) {
-        await db.run('UPDATE homeworks SET sort_order = $1 WHERE id = $2', item.sort_order, item.id);
+        await client.query('UPDATE homeworks SET sort_order = $1 WHERE id = $2', [item.sort_order, item.id]);
       }
     });
     await batch(orders);
