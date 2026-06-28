@@ -197,4 +197,10 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
+// 全局错误处理中间件 — 确保所有错误返回 JSON
+app.use((err, req, res, next) => {
+  console.error('未捕获错误:', err);
+  res.status(500).json({ success: false, error: '服务器内部错误' });
+});
+
 module.exports = app;

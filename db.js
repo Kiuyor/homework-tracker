@@ -132,16 +132,16 @@ async function seedSubjects() {
 }
 
 async function ensureInit() {
-  if (!initialized) {
-    try {
-      await initTables();
-      await seedSubjects();
-      initialized = true;
-      console.log('✅ 数据库表初始化完成');
-    } catch (err) {
-      console.error('❌ 数据库初始化失败:', err.message);
-      throw err;
-    }
+  if (initialized) return;
+  initialized = true; // 先标记已初始化，防止并发重复执行
+  try {
+    await initTables();
+    await seedSubjects();
+    console.log('✅ 数据库表初始化完成');
+  } catch (err) {
+    initialized = false; // 失败时重置，允许重试
+    console.error('❌ 数据库初始化失败:', err.message);
+    throw err;
   }
 }
 

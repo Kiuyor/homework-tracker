@@ -268,11 +268,6 @@ body {
   box-shadow: var(--shadow-in);
   color: var(--accent);
 }
-.darkmode-btn.active {
-  color: var(--accent);
-  box-shadow: var(--shadow-in);
-}
-
 /* Batch edit button */
 .batch-edit-btn.hidden { display: none; }
 

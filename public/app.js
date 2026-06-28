@@ -87,10 +87,17 @@ function updateDateDisplay() {
 }
 
 // ============ API Calls ============
+let _apiReqId = 0;
 async function api(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(path, opts);
+  // 检查 HTTP 状态码，避免非 2xx 时解析 JSON 失败
+  if (!res.ok) {
+    let errMsg = `请求失败 (${res.status})`;
+    try { const json = await res.json(); errMsg = json.error || errMsg; } catch {}
+    throw new Error(errMsg);
+  }
   const json = await res.json();
   if (!json.success) throw new Error(json.error || '请求失败');
   return json.data;
@@ -98,7 +105,9 @@ async function api(method, path, body) {
 
 async function loadHomeworks() {
   const date = formatDate(state.currentDate);
+  const reqId = ++_apiReqId;
   const homeworks = await api('GET', `/api/homeworks?date=${date}`);
+  if (reqId !== _apiReqId) return; // 忽略旧请求的响应
   state.homeworks = homeworks;
   renderHomeworks();
 }
@@ -364,7 +373,7 @@ function openAddModal() {
   state.editingId = null;
   dom.modalTitle.textContent = '添加作业';
   dom.editId.value = '';
-  dom.subjectSelect.value = state.subjects[0]?.id || '';
+  dom.subjectSelect.value = '';  // 默认选"请选择科目"
   dom.contentInput.value = '';
   dom.noteInput.value = '';
   dom.modalOverlay.classList.remove('hidden');
@@ -375,7 +384,8 @@ function openEditModal(hw) {
   state.editingId = hw.id;
   dom.modalTitle.textContent = '编辑作业';
   dom.editId.value = hw.id;
-  dom.subjectSelect.value = hw.subject_id ?? state.subjects[0]?.id ?? '';
+  // 有科目则选中该科目，否则显示"请选择科目"
+  dom.subjectSelect.value = hw.subject_id ?? '';
   dom.contentInput.value = hw.content;
   dom.noteInput.value = hw.note || '';
   dom.modalOverlay.classList.remove('hidden');
@@ -509,7 +519,7 @@ dom.selectModeBtn.addEventListener('click', () => {
   } else {
     state.selected.clear();
     dom.selectionBar.classList.add('hidden');
-    loadHomeworks();
+    renderHomeworks();
   }
   updateSelectionUI();
 });
@@ -543,7 +553,7 @@ function toggleSelect(id) {
   if (state.selected.has(id)) state.selected.delete(id);
   else state.selected.add(id);
   updateSelectionUI();
-  loadHomeworks();
+  renderHomeworks();
 }
 
 dom.selectAllBtn.addEventListener('click', () => {
@@ -557,13 +567,13 @@ dom.selectAllBtn.addEventListener('click', () => {
     dom.selectAllBtn.textContent = '取消全选';
   }
   updateSelectionUI();
-  loadHomeworks();
+  renderHomeworks();
 });
 
 dom.clearSelection.addEventListener('click', () => {
   state.selected.clear();
   updateSelectionUI();
-  loadHomeworks();
+  renderHomeworks();
 });
 
 dom.batchEditBtn.addEventListener('click', () => {
@@ -762,15 +772,27 @@ async function init() {
   // 加载科目
   try {
     await loadSubjects();
-    dom.subjectSelect.innerHTML = state.subjects
-      .map(s => `<option value="${s.id}">${s.name}</option>`)
-      .join('');
+    // 保留已有的占位选项，在后面追加科目选项（防止重复追加）
+    // 先清除之前追加的科目选项（保留第一个占位选项）
+    while (dom.subjectSelect.options.length > 1) {
+      dom.subjectSelect.remove(1);
+    }
+    state.subjects.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name;
+      dom.subjectSelect.appendChild(opt);
+    });
   } catch (e) {
     /* 科目加载失败也可用 */
   }
 
   updateDateDisplay();
-  await loadHomeworks();
+  try {
+    await loadHomeworks();
+  } catch (e) {
+    /* 作业加载失败也继续运行 */
+  }
 }
 
 // 保存偏好
