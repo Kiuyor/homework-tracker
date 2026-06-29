@@ -80,9 +80,12 @@ app.post('/api/homeworks', async (req, res) => {
     }
 
     const insertHomework = db.transaction(async (client) => {
-      // FOR UPDATE 锁住该日期的行，防止并发读取 MAX(sort_order) 产生 TOCTOU 竞态
+      // 先锁住该日期的所有 homework 行，防止并发插入产生 TOCTOU 竞态
+      await client.query('SELECT id FROM homeworks WHERE date = $1 FOR UPDATE', [date]);
+
+      // 在行锁保护下安全计算下一个 sort_order
       const maxSortResult = await client.query(
-        'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM homeworks WHERE date = $1 FOR UPDATE',
+        'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM homeworks WHERE date = $1',
         [date]
       );
       const nextSort = parseInt(maxSortResult.rows[0].next) || 0;
