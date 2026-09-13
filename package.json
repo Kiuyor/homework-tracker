@@ -1,0 +1,19 @@
+{
+  "name": "homework-tracker",
+  "version": "2.0.0",
+  "description": "班级作业记录网站 — 纯本地 SQLite 版",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0"
+  },
+  "allowScripts": {
+    "better-sqlite3@11.10.0": true
+  }
+}

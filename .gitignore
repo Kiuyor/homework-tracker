@@ -1,0 +1,9 @@
+node_modules/
+homework.db
+homework.db-shm
+homework.db-wal
+.reasonix/
+
+# 工具运行时目录（状态/缓存/本地 db），不纳入版本控制
+.rivet/
+.hermes/
