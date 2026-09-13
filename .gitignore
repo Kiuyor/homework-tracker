@@ -7,3 +7,6 @@ homework.db-wal
 # 工具运行时目录（状态/缓存/本地 db），不纳入版本控制
 .rivet/
 .hermes/
+
+# 绿色版打包产物（构建输出，含 node.exe 运行时，体积大）
+release/
