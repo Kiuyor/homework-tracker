@@ -756,10 +756,9 @@ body.view-show .batch-bar { display: none; }
   color: var(--ink);
   font-variant-numeric: tabular-nums; /* 等宽数字，避免分钟跳变时宽度抖动 */
   line-height: 1.2;
-  opacity: 0.35;
-  transition: opacity var(--dur-fast) var(--ease-out);
+  /* 始终高亮显示（不做 hover 显影），保证后排也能看清当前时间 */
+  opacity: 1;
 }
-.show-clock:hover { opacity: 0.95; }
 body.view-show .show-clock { display: flex; }
 body.dark-mode .show-clock { background: rgba(40, 40, 40, 0.85); }
 
