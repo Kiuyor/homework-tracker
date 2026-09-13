@@ -285,6 +285,7 @@ window.toggleViewMode = function () {
     window.closeBatchMode();
     window.loadHomeworks();
     window.startAutoRefresh();
+    window.startClock();
     window.enterFullscreen();
   } else {
     // 切回编辑模式（科代表录入）
@@ -297,6 +298,7 @@ window.toggleViewMode = function () {
       clearInterval(state.refreshTimer);
       state.refreshTimer = null;
     }
+    window.stopClock();
     window.loadHomeworks();
     window.exitFullscreen();
   }
@@ -309,6 +311,33 @@ window.startAutoRefresh = function () {
   state.refreshTimer = setInterval(function () {
     window.loadHomeworks();
   }, 5000);
+};
+
+// ============ 展示模式时钟（右上角，精确到分） ============
+window.updateClock = function () {
+  var el = document.getElementById('showClock');
+  if (!el) return;
+  var now = new Date();
+  var text = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  if (text === window.AppState.clockText) return; // 分钟未变，不写 DOM
+  window.AppState.clockText = text;
+  el.textContent = text;
+};
+
+window.startClock = function () {
+  var state = window.AppState;
+  if (state.clockTimer) return;
+  window.updateClock();
+  // 每秒校时一次：兼顾「恰好分钟边界更新」与标签页后台节流后自动追齐
+  state.clockTimer = setInterval(window.updateClock, 1000);
+};
+
+window.stopClock = function () {
+  var state = window.AppState;
+  if (state.clockTimer) {
+    clearInterval(state.clockTimer);
+    state.clockTimer = null;
+  }
 };
 
 // ============ 展示模式字号缩放 ============

@@ -738,6 +738,31 @@ body.view-show .expand-bar { display: none; }
 body.view-show .manage-bar { display: none; }
 body.view-show .batch-bar { display: none; }
 
+/* 展示模式时钟（右上角：当前系统时间，精确到分） */
+.show-clock {
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  z-index: 940;
+  display: none;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--line);
+  border-radius: 30px;
+  padding: 6px 24px;
+  font-size: clamp(20px, 1.7vw, 32px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums; /* 等宽数字，避免分钟跳变时宽度抖动 */
+  line-height: 1.2;
+  opacity: 0.35;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.show-clock:hover { opacity: 0.95; }
+body.view-show .show-clock { display: flex; }
+body.dark-mode .show-clock { background: rgba(40, 40, 40, 0.85); }
+
 /* 展示模式控制组（右下角：字号调节 + 退出按钮） */
 .show-ctrl {
   position: fixed;

@@ -11,6 +11,8 @@ window.AppState = {
   selectedIds: [],
   viewMode: 'edit', // 'edit' | 'show'
   refreshTimer: null,
+  clockTimer: null,
+  clockText: '', // 上次渲染的 HH:MM，避免每秒重复写 DOM
 };
 
 // ============ Date Helpers ============
