@@ -99,6 +99,11 @@
   // Dark mode
   dom.darkmodeBtn.addEventListener('click', window.toggleDarkMode);
 
+  // 展示模式：视口尺寸变化（投影切换分辨率/横竖屏）时重算字号自适应
+  window.addEventListener('resize', function () {
+    if (window.AppState.viewMode === 'show') window.fitShowDisplay();
+  });
+
   // Font size slider
   var fontSizeSlider = document.getElementById('fontSizeSlider');
   var fontSizeLabel = document.getElementById('fontSizeLabel');

@@ -1,10 +1,6 @@
 // ============ Subject Color Map ============
-// 动态颜色池：新增科目自动分配，不再依赖硬编码
-var SUBJECT_COLOR_POOL = [
-  '#d43a2f', '#2f6fd0', '#c23a8b', '#0f9e8a',
-  '#e07b1f', '#3f9e3c', '#8b5cf6', '#f59e0b',
-  '#ec4899', '#06b6d4', '#84cc16', '#f97316'
-];
+// 科目色由 CSS 变量池供给（--c-s1..--c-s12），随亮/暗模式自动切换，并保证白底对比度
+var SUBJECT_COLOR_COUNT = 12;
 var _colorCache = {};
 function subjectColor(name) {
   if (_colorCache[name]) return _colorCache[name];
@@ -12,7 +8,7 @@ function subjectColor(name) {
   var subs = (window.AppState && window.AppState.subjects) || [];
   var idx = subs.findIndex(function (s) { return s.name === name; });
   if (idx === -1) idx = Object.keys(_colorCache).length; // 未知科目（如「其他」）兜底
-  _colorCache[name] = SUBJECT_COLOR_POOL[idx % SUBJECT_COLOR_POOL.length];
+  _colorCache[name] = 'var(--c-s' + (idx % SUBJECT_COLOR_COUNT + 1) + ')';
   return _colorCache[name];
 }
 
@@ -43,6 +39,7 @@ window.renderHomeworks = function () {
       ? '今天还没有作业'
       : '该科目今天没有作业';
     groupsEl.innerHTML = '<div class="empty-line">' + emptyText + '</div>';
+    if (state.viewMode === 'show') window.fitShowDisplay();
     return;
   }
 
@@ -176,6 +173,15 @@ window.renderHomeworks = function () {
     sec.appendChild(ul);
     groupsEl.appendChild(sec);
   });
+
+  // 展示模式：渲染后按实际内容量自适应字号，确保内容完整不裁切
+  if (state.viewMode === 'show') {
+    window.fitShowDisplay();
+    // 网络字体加载完成后字宽变化，需重算一次
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(function () { window.fitShowDisplay(); });
+    }
+  }
 };
 
 // ============ Font Size ============
@@ -312,11 +318,56 @@ window.applyShowScale = function (scale) {
   var val = document.getElementById('showFontVal');
   if (val) val.textContent = Math.round(scale * 100) + '%';
   localStorage.setItem('hw_show_scale', String(scale));
+  if (window.AppState && window.AppState.viewMode === 'show') window.fitShowDisplay();
 };
 
 window.adjustShowScale = function (delta) {
   var cur = parseFloat(document.documentElement.style.getPropertyValue('--show-scale')) || 1;
   window.applyShowScale(cur + delta);
+};
+
+// ============ 展示模式自适应 ============
+// 目标：内容一条不漏（完全性）+ 字号尽量大（后排可视性）。
+// 仅调整 --fit-scale（与用户选择的 --show-scale 相乘），二分搜索出「内容完整显示」的最大字号。
+// 若缩到可读下限仍放不下 → 退化为自然布局 + 纵向滚动（见 .show-overflow）。
+window.fitShowDisplay = function () {
+  if (!document.body.classList.contains('view-show')) return;
+  var root = document.documentElement;
+  var body = document.body;
+  var FLOOR = 0.55; // 下限：再小就不可读
+
+  body.classList.remove('show-overflow'); // 先按「固定网格」评估
+
+  function overflows() {
+    var groups = document.querySelectorAll('body.view-show .subject-group');
+    for (var i = 0; i < groups.length; i++) {
+      var g = groups[i];
+      var list = g.querySelector('.hw-list');
+      if (list && list.scrollHeight > list.clientHeight + 1) return true;
+      if (g.scrollHeight > g.clientHeight + 1) return true;
+    }
+    return false;
+  }
+  function setScale(s) { root.style.setProperty('--fit-scale', String(s)); }
+
+  setScale(1);
+  if (!overflows()) return;   // 基准字号即完整显示
+
+  setScale(FLOOR);
+  if (overflows()) {
+    // 可读下限仍放不下：切换滚动兜底，并用回较大字号（滚动下后排仍要看得清）
+    body.classList.add('show-overflow');
+    setScale(1);
+    return;
+  }
+
+  var lo = FLOOR, hi = 1;     // lo=可完整显示, hi=溢出
+  for (var k = 0; k < 8; k++) {
+    var mid = (lo + hi) / 2;
+    setScale(mid);
+    if (overflows()) hi = mid; else lo = mid;
+  }
+  setScale(lo);
 };
 
 // ============ Manage Mode（管理扩展条） ============

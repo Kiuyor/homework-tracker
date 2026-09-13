@@ -30,13 +30,26 @@ button svg { pointer-events: none; }
   --line: #e8e8e8;
   --accent: #111111;
 
-  /* 科目色（低饱和，白底可读） */
-  --c-yu: #d43a2f;
-  --c-shu: #2f6fd0;
-  --c-ying: #c23a8b;
-  --c-wu: #0f9e8a;
-  --c-hua: #e07b1f;
-  --c-sheng: #3f9e3c;
+  /* 科目色池：白底对比度 ≥4:1（投影/白板后排可辨识）；由 JS 按科目序号引用 --c-sN */
+  --c-s1: #cf3227;
+  --c-s2: #2f6fd0;
+  --c-s3: #c23a8b;
+  --c-s4: #0d8574;
+  --c-s5: #c2410c;
+  --c-s6: #2f8a2e;
+  --c-s7: #7c3aed;
+  --c-s8: #b45309;
+  --c-s9: #db2777;
+  --c-s10: #0e7490;
+  --c-s11: #4d7c0f;
+  --c-s12: #a21caf;
+  /* 语义别名 */
+  --c-yu: var(--c-s1);
+  --c-shu: var(--c-s2);
+  --c-ying: var(--c-s3);
+  --c-wu: var(--c-s4);
+  --c-hua: var(--c-s5);
+  --c-sheng: var(--c-s6);
 
   --space-sm: 12px;
   --space-md: 20px;
@@ -661,12 +674,18 @@ body.dark-mode {
   --ink-faint: #5a5a5a;
   --line: #2c2c2c;
 
-  --c-yu: #ff6b5e;
-  --c-shu: #6ea8ff;
-  --c-ying: #ff7ec2;
-  --c-wu: #3fd6c2;
-  --c-hua: #ffa54d;
-  --c-sheng: #6fd46a;
+  --c-s1: #ff7a6e;
+  --c-s2: #7fb0ff;
+  --c-s3: #ff8fc8;
+  --c-s4: #3fd6c2;
+  --c-s5: #ffab5c;
+  --c-s6: #7fdc78;
+  --c-s7: #b79cff;
+  --c-s8: #ffc266;
+  --c-s9: #ff8fb0;
+  --c-s10: #5fd0e0;
+  --c-s11: #b8e05f;
+  --c-s12: #e08fef;
 }
 body.dark-mode .topbar { background: var(--bg); }
 body.dark-mode .modal { background: var(--surface); }
@@ -691,10 +710,10 @@ body.dark-mode .toast.error { background: #ff6b5e; color: #141414; }
    响应式
    ============================================================ */
 @media (max-width: 1024px) {
-  .subject-groups { grid-template-columns: repeat(2, 1fr); }
+  .subject-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 720px) {
-  .subject-groups { grid-template-columns: 1fr; }
+  .subject-groups { grid-template-columns: minmax(0, 1fr); }
   .topbar-inner { padding: 14px 16px; }
   .main { padding: 20px 16px 80px; }
   .manage-bar { padding: 12px 16px 14px; }
@@ -790,27 +809,58 @@ body.view-show .exit-show-btn { display: flex; }
 body.view-show .show-font { display: flex; }
 body.view-show .main {
   padding: 40px 48px;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
 body.view-show .subject-groups {
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(2, 1fr);
+  /* minmax(0,1fr)：列/行可收缩到内容最小尺寸以下，长内容不再撑破视口 */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
   height: 100%;
   gap: 32px 56px;
   align-items: stretch;
 }
 body.view-show .subject-group {
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 body.view-show .hw-list {
   flex: 1;
-  justify-content: center;
+  min-height: 0;
+  /* safe center：放得下时垂直居中；放不下时退化为顶部对齐，避免顶部被裁 */
+  justify-content: safe center;
+  overflow: hidden;
 }
-/* 作业条数多时内容溢出：列表底部向上收缩，字号随高度自适应 */
-body.view-show .hw-list { overflow: hidden; }
+/* ============================================================
+   展示模式·溢出兜底
+   字号缩到可读下限仍放不下（如某科目作业极多）时启用：
+   改为自然高度布局 + 允许纵向滚动，保证内容一条不漏。
+   完全性优先于「白板无滚动」——宁可滚动也不静默裁切。
+   ============================================================ */
+body.view-show.show-overflow .main {
+  height: auto;
+  min-height: 100vh;
+  overflow-y: auto;
+  justify-content: flex-start;
+}
+body.view-show.show-overflow .subject-groups {
+  grid-template-rows: none;
+  grid-auto-rows: auto;
+  height: auto;
+}
+body.view-show.show-overflow .subject-group {
+  height: auto;
+  overflow: visible;
+}
+body.view-show.show-overflow .hw-list {
+  overflow: visible;
+  justify-content: flex-start;
+}
 body.view-show .hw-empty {
   list-style: none;
   display: flex;
@@ -844,13 +894,14 @@ body.view-show .hw-row {
   cursor: default;
 }
 body.view-show .hw-row .content {
-  font-size: calc(clamp(32px, 4vw, 64px) * var(--show-scale, 1));
-  line-height: 1.4;
-  word-break: keep-all;
+  /* 基础字号随视口放大（后排可读）；--fit-scale 由 JS 依据实际内容量收缩，保证不裁切 */
+  font-size: calc(clamp(32px, 3.4vw + 1.2vh, 92px) * var(--show-scale, 1) * var(--fit-scale, 1));
+  line-height: 1.35;
+  word-break: normal;
   overflow-wrap: break-word;
 }
 body.view-show .hw-row .deadline {
-  font-size: calc(40px * var(--show-scale, 1));
+  font-size: calc(38px * var(--show-scale, 1) * var(--fit-scale, 1));
   margin-top: 20px;
   color: var(--ink);
   font-weight: 700;
@@ -861,7 +912,7 @@ body.view-show .hw-row .deadline svg {
   margin-right: 2px;
 }
 body.view-show .subject-name {
-  font-size: calc(clamp(40px, 4vw, 60px) * var(--show-scale, 1));
+  font-size: calc(clamp(38px, 3vw + 1vh, 76px) * var(--show-scale, 1) * var(--fit-scale, 1));
 }
 body.view-show .subject-count { display: none; }
 
@@ -872,5 +923,4 @@ body.view-show ::-webkit-scrollbar { display: none; }
 /* 希沃一体机触屏优化：展示模式无滚动，一屏铺满 */
 @media (min-width: 1600px) {
   body.view-show .main { padding: 56px 72px; }
-  body.view-show .hw-row .content { font-size: calc(64px * var(--show-scale, 1)); }
 }
