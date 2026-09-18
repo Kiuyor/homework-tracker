@@ -9,6 +9,7 @@ window.AppDom = {
   nextDate: window.$('#nextDate'),
   todayBtn: window.$('#todayBtn'),
   subjectGroups: window.$('#subjectGroups'),
+  main: window.$('.main'),
   addBtn: window.$('#addBtn'),
   modeToggle: window.$('#modeToggle'),
   manageBar: window.$('#manageBar'),

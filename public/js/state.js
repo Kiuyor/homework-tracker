@@ -16,6 +16,7 @@ window.AppState = {
   clockText: '', // 上次渲染的 HH:MM，避免每秒重复写 DOM
   offlineFailures: 0,  // 连续刷新失败次数（离线角标用）
   offlineShown: false, // 角标当前是否已显示，避免重复写 DOM
+  lastRenderSig: null, // 上次渲染时的输入签名，用于「数据没变就跳过重渲染」
 };
 
 // ============ Date Helpers ============

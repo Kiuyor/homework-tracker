@@ -26,6 +26,16 @@ window.renderHomeworks = function () {
   var dom = window.AppDom;
   var state = window.AppState;
   var groupsEl = dom.subjectGroups;
+  // 重渲染会销毁整棵子树。滚动容器有两种：
+  //   · show-overflow 兜底布局下是 .main（overflow-y:auto）
+  //   · 编辑模式下是文档本身（window）
+  // 两种都记住并在渲染后还原，避免滚到一半被弹回顶部。
+  var prevScrollMain = dom.main ? dom.main.scrollTop : 0;
+  var prevScrollWin = window.scrollY || document.documentElement.scrollTop || 0;
+  function restoreScroll() {
+    if (dom.main && prevScrollMain > 0) dom.main.scrollTop = prevScrollMain;
+    if (prevScrollWin > 0) window.scrollTo(0, prevScrollWin);
+  }
   groupsEl.innerHTML = '';
 
   // 应用科目筛选
@@ -40,6 +50,7 @@ window.renderHomeworks = function () {
       : '该科目今天没有作业';
     groupsEl.innerHTML = '<div class="empty-line">' + emptyText + '</div>';
     if (state.viewMode === 'show') window.fitShowDisplay();
+    restoreScroll();
     return;
   }
 
@@ -177,11 +188,9 @@ window.renderHomeworks = function () {
   // 展示模式：渲染后按实际内容量自适应字号，确保内容完整不裁切
   if (state.viewMode === 'show') {
     window.fitShowDisplay();
-    // 网络字体加载完成后字宽变化，需重算一次
-    if (document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(function () { window.fitShowDisplay(); });
-    }
   }
+  // 放在 fitShowDisplay 之后：它会切换 show-overflow 布局，进而决定 .main 能否滚动
+  restoreScroll();
 };
 
 // ============ Font Size ============
