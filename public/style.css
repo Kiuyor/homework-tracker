@@ -981,3 +981,20 @@ body.view-show ::-webkit-scrollbar { display: none; }
 @media (min-width: 1600px) {
   body.view-show .main { padding: 56px 72px; }
 }
+
+/* ============================================================
+   无障碍：尊重系统的「减弱动态效果」设置
+   展示模式是长时间挂在教室投影/一体机上的，持续动画对部分人不适，
+   在低端一体机上也容易掉帧。开启该系统设置后，所有过渡与动画即刻完成
+   （保留 0.01ms 而非 0 是为了不破坏依赖 transitionend/animationend 的逻辑）。
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
