@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>作业墙</title>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <!-- 刻意不引外部网络字体：绿色版承诺「无需联网」，而 Google Fonts 在国内教室
+       通常卡到超时，作为渲染阻塞资源会把首屏白屏拖长好几秒。
+       改用 style.css 里的系统字体回退链（PingFang SC / Microsoft YaHei / system-ui），
+       Windows 教室一定有微软雅黑；展示模式字号由 fitShowDisplay() 运行时测量，会自动适配。 -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
