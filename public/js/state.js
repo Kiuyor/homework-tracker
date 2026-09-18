@@ -4,6 +4,7 @@ window.AppState = {
   homeworks: [],
   subjects: [],
   editingId: null,
+  editingDeadline: null, // 编辑中的作业原始 deadline，用于「只改时间不改日期」
   dragSrcId: null,
   fontSize: 44,
   filterSubjectId: null,

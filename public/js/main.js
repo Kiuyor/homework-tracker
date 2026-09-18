@@ -150,7 +150,12 @@
     data.deadline = null;
     if (deadlineVal) {
       // 手动输入：只接受时间 "14:30"，宽容提取（带日期也能取到时间）
-      data.deadline = window.parseDeadlineInput(deadlineVal);
+      // 基准日期：编辑时用原 deadline 的日期（只改时间、不改日期）；
+      //           新建时用当前查看的日期（在「明天」新建，截止时间才落在明天）
+      var baseDate = (state.editingId && state.editingDeadline)
+        ? String(state.editingDeadline).slice(0, 10)
+        : window.formatDate(state.currentDate);
+      data.deadline = window.parseDeadlineInput(deadlineVal, baseDate);
       if (!data.deadline) {
         window.showToast('截止时间格式无效，请填如 14:30', 'error');
         return;

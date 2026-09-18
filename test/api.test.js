@@ -171,3 +171,108 @@ test('PUT :id 不存在 → 404', async () => {
   const res = await req('PUT', '/api/homeworks/999999', { content: 'x' });
   assert.equal(res.status, 404);
 });
+
+// ============ 已知缺陷回归（fix/known-defects） ============
+
+// H1：PUT 必须校验 date —— 修复前非法日期返回 200 并落库，
+// 后果是该作业因前端只按合法 YYYY-MM-DD 查询而永久不可见、无法编辑删除。
+
+test('H1 PUT date 非法格式 → 400', async () => {
+  const hw = await createHomework();
+  const res = await req('PUT', `/api/homeworks/${hw.id}`, { date: 'not-a-date' });
+  assert.equal(res.status, 400);
+});
+
+test('H1 PUT date 不存在的日期(2026-13-45) → 400', async () => {
+  const hw = await createHomework();
+  const res = await req('PUT', `/api/homeworks/${hw.id}`, { date: '2026-13-45' });
+  assert.equal(res.status, 400);
+});
+
+test('H1 PUT date 合法 → 200 且真的改了（不误伤）', async () => {
+  const hw = await createHomework();
+  const res = await req('PUT', `/api/homeworks/${hw.id}`, { date: '2026-03-05' });
+  assert.equal(res.status, 200);
+  assert.equal(db.get('SELECT date FROM homeworks WHERE id = ?', hw.id).date, '2026-03-05');
+});
+
+// M1：reorder 必须限定在同一日期内 —— 修复前无 date 条件，
+// 拖拽今天的作业会打乱其它日期中同序号作业的相对顺序。
+
+test('M1 reorder 跨日期 id → 400', async () => {
+  const a = await createHomework({ date: '2026-04-01' });
+  const b = await createHomework({ date: '2026-04-02' });
+  const res = await req('PUT', '/api/homeworks/reorder', {
+    orders: [{ id: a.id, sort_order: 0 }, { id: b.id, sort_order: 0 }],
+  });
+  assert.equal(res.status, 400);
+});
+
+test('M1 reorder 同一日期 → 200（不误伤）', async () => {
+  const a = await createHomework({ date: '2026-04-03' });
+  const b = await createHomework({ date: '2026-04-03' });
+  const res = await req('PUT', '/api/homeworks/reorder', {
+    orders: [{ id: a.id, sort_order: 0 }, { id: b.id, sort_order: 1 }],
+  });
+  assert.equal(res.status, 200);
+});
+
+// M4：reorder 元素必须是正整数且真实存在 —— 修复前 id:1.5 或不存在的 id
+// 都返回 200「排序已更新」，前端把失败当成功。
+
+test('M4 reorder id 非整数(1.5) → 400', async () => {
+  const hw = await createHomework();
+  const res = await req('PUT', '/api/homeworks/reorder', {
+    orders: [{ id: hw.id, sort_order: 0 }, { id: 1.5, sort_order: 1 }],
+  });
+  assert.equal(res.status, 400);
+});
+
+test('M4 reorder 含不存在的 id → 400', async () => {
+  const hw = await createHomework();
+  const res = await req('PUT', '/api/homeworks/reorder', {
+    orders: [{ id: hw.id, sort_order: 0 }, { id: 999999, sort_order: 1 }],
+  });
+  assert.equal(res.status, 400);
+});
+
+// M3：batch 应能把科目清空为 null，与单个 PUT 行为对齐 —— 修复前返回 400。
+
+test('M3 batch subject_id=null → 200 且科目被清空', async () => {
+  const hw = await createHomework({ subject_id: 1 });
+  const res = await req('PUT', '/api/homeworks/batch', { ids: [hw.id], data: { subject_id: null } });
+  assert.equal(res.status, 200);
+  assert.equal(db.get('SELECT subject_id FROM homeworks WHERE id = ?', hw.id).subject_id, null);
+});
+
+// L3：/api 下任意层级都应返回 JSON 404 —— 修复前 /api/* 只匹配一层，
+// 更深路径落到 SPA 兜底返回 index.html，前端 res.json() 解析报错。
+
+test('L3 GET /api/不存在/更深 → 404 且为 JSON', async () => {
+  const res = await req('GET', '/api/nope/deeper');
+  assert.equal(res.status, 404);
+  const body = await res.json();
+  assert.equal(body.success, false);
+});
+
+// L4：deadline 时分秒必须合法 —— 修复前只校验位数，99:99:99 能落库。
+
+test('L4 POST deadline 99:99:99 → 400', async () => {
+  const res = await req('POST', '/api/homeworks', {
+    content: 'x', date: '2026-01-01', deadline: '2026-01-01 99:99:99',
+  });
+  assert.equal(res.status, 400);
+});
+
+test('L4 PUT deadline 99:99:99 → 400', async () => {
+  const hw = await createHomework();
+  const res = await req('PUT', `/api/homeworks/${hw.id}`, { deadline: '2026-01-01 99:99:99' });
+  assert.equal(res.status, 400);
+});
+
+test('L4 POST deadline 合法边界(23:59:59) → 201（不误伤）', async () => {
+  const res = await req('POST', '/api/homeworks', {
+    content: 'x', date: '2026-01-01', deadline: '2026-01-01 23:59:59',
+  });
+  assert.equal(res.status, 201);
+});

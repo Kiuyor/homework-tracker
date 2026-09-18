@@ -122,7 +122,7 @@ window.renderHomeworks = function () {
       var metaHtml = '';
       if (hw.deadline) {
         metaHtml = '<div class="meta">' +
-          '<span class="deadline">' + ICON.clock + '<span>' + formatDeadline(hw.deadline) + '</span></span>' +
+          '<span class="deadline">' + ICON.clock + '<span>' + formatDeadline(hw.deadline, hw.date) + '</span></span>' +
         '</div>';
       }
 
@@ -190,9 +190,10 @@ window.applyFontSize = function (size) {
 };
 
 // ============ Deadline Formatting ============
-// 展示：只显示 "14:30"（无需年份日期）
+// 展示：默认只显示 "14:30"；当截止日期与作业日期不是同一天时（跨天截止）
+// 额外显示 "MM-DD"，否则用户看不出这条截止时间其实是明天/后天。
 // 安全：解析失败一律返回空串，绝不把原始字符串插入 innerHTML（防存储型 XSS）
-function formatDeadline(raw) {
+function formatDeadline(raw, hwDate) {
   if (!raw) return '';
   var d = new Date(raw.replace(' ', 'T'));
   if (isNaN(d.getTime())) {
@@ -204,7 +205,11 @@ function formatDeadline(raw) {
   if (isNaN(d.getTime())) return '';
   var hours = d.getHours().toString().padStart(2, '0');
   var mins = d.getMinutes().toString().padStart(2, '0');
-  return hours + ':' + mins;
+  var hhmm = hours + ':' + mins;
+  var mm = (d.getMonth() + 1).toString().padStart(2, '0');
+  var dd = d.getDate().toString().padStart(2, '0');
+  var dlDate = d.getFullYear() + '-' + mm + '-' + dd;
+  return (hwDate && dlDate !== hwDate) ? (mm + '-' + dd + ' ' + hhmm) : hhmm;
 }
 
 // 编辑回显：数据库 "2026-07-10 14:30:00" → 输入框 "14:30"
@@ -218,25 +223,32 @@ function formatDeadlineInput(raw) {
 }
 
 // 手动输入解析：只接受时间 "14:30" / "8:00" / "18:05"
-// 用今天日期拼成 "YYYY-MM-DD HH:MM:00" 存储（DB 兼容），解析失败返回 null
-window.parseDeadlineInput = function (text) {
+// baseDateStr 为 "YYYY-MM-DD"，决定截止时间落在哪一天：
+//   · 编辑时传「原 deadline 的日期」—— 修复前这里固定用今天，
+//     导致只改作业内容也会把截止日期悄悄改成编辑当天
+//   · 新建时传「当前查看的日期」—— 在「明天」新建作业时截止时间才落在明天
+// 解析失败返回 null
+window.parseDeadlineInput = function (text, baseDateStr) {
   if (!text) return null;
   var m = text.match(/(\d{1,2})\s*[:：]\s*(\d{1,2})/);
   if (!m) return null;
   var hour = +m[1], min = +m[2];
   if (hour > 23 || min > 59) return null; // 非法时间
-  var now = new Date();
-  var year = now.getFullYear();
-  var month = String(now.getMonth() + 1).padStart(2, '0');
-  var day = String(now.getDate()).padStart(2, '0');
-  return year + '-' + month + '-' + day +
-    ' ' + String(hour).padStart(2, '0') + ':' + String(min).padStart(2, '0') + ':00';
+  var base = /^\d{4}-\d{2}-\d{2}$/.test(baseDateStr || '') ? baseDateStr : null;
+  if (!base) {
+    var now = new Date();
+    base = now.getFullYear() + '-' +
+      String(now.getMonth() + 1).padStart(2, '0') + '-' +
+      String(now.getDate()).padStart(2, '0');
+  }
+  return base + ' ' + String(hour).padStart(2, '0') + ':' + String(min).padStart(2, '0') + ':00';
 };
 
 // ============ Modal ============
 window.openAddModal = function () {
   var dom = window.AppDom;
   window.AppState.editingId = null;
+  window.AppState.editingDeadline = null; // 新建：截止时间以当前查看日期为基准
   dom.modalTitle.textContent = '添加作业';
   dom.editId.value = '';
   dom.subjectSelect.value = '';
@@ -250,6 +262,7 @@ window.openAddModal = function () {
 window.openEditModal = function (hw) {
   var dom = window.AppDom;
   window.AppState.editingId = hw.id;
+  window.AppState.editingDeadline = hw.deadline || null; // 保留原日期，只允许改时间
   dom.modalTitle.textContent = '编辑作业';
   dom.editId.value = hw.id;
   dom.subjectSelect.value = hw.subject_id != null ? hw.subject_id : '';
@@ -309,7 +322,11 @@ window.startAutoRefresh = function () {
   var state = window.AppState;
   if (state.refreshTimer) return;
   state.refreshTimer = setInterval(function () {
-    window.loadHomeworks();
+    // 展示模式是长时间无人值守的投影：轮询失败既不能抛未捕获异常，
+    // 也不能弹 toast 打扰。静默重试，下个周期自然恢复。
+    Promise.resolve(window.loadHomeworks()).catch(function (err) {
+      console.warn('[作业墙] 自动刷新失败，将在下个周期重试：', err && err.message);
+    });
   }, 5000);
 };
 

@@ -18,9 +18,13 @@ function isValidDate(s) {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
 }
 
-// 校验 "YYYY-MM-DD HH:MM:SS"
+// 校验 "YYYY-MM-DD HH:MM:SS"：日期真实存在，且时分秒在合法范围内
+// （修复前只校验位数，导致 "2026-01-01 99:99:99" 能落库）
 function isValidDeadline(s) {
-  return typeof s === 'string' && DEADLINE_RE.test(s);
+  if (typeof s !== 'string' || !DEADLINE_RE.test(s)) return false;
+  if (!isValidDate(s.slice(0, 10))) return false;
+  const [h, m, sec] = s.slice(11).split(':').map(Number);
+  return h <= 23 && m <= 59 && sec <= 59;
 }
 
 // 请求日志中间件
@@ -159,11 +163,28 @@ app.put('/api/homeworks/reorder', (req, res) => {
     if (!Array.isArray(orders)) {
       return res.status(400).json({ success: false, error: 'orders 必须为数组' });
     }
-    // 元素校验：每个必须是 {id: 数字, sort_order: 数字}
+    // 空数组：保持原有的幂等无操作语义
+    if (orders.length === 0) {
+      return res.json({ success: true, message: '排序已更新' });
+    }
+    // 元素校验：每个必须是 {id: 正整数, sort_order: 整数}
     for (const item of orders) {
-      if (!item || typeof item.id !== 'number' || !Number.isInteger(item.sort_order)) {
-        return res.status(400).json({ success: false, error: 'orders 元素必须为 {id, sort_order}' });
+      if (!item || !Number.isInteger(item.id) || item.id <= 0 || !Number.isInteger(item.sort_order)) {
+        return res.status(400).json({ success: false, error: 'orders 元素必须为 {id: 正整数, sort_order: 整数}' });
       }
+    }
+
+    // id 必须真实存在 —— 否则会返回 200「排序已更新」，让前端把失败当成功
+    const ids = orders.map((item) => item.id);
+    const placeholders = ids.map(() => '?').join(', ');
+    const found = db.all(`SELECT id, date FROM homeworks WHERE id IN (${placeholders})`, ...ids);
+    if (found.length !== ids.length) {
+      return res.status(400).json({ success: false, error: 'orders 中存在不存在的作业 id' });
+    }
+
+    // 排序只在同一日期内有意义：跨日期会打乱其它日期中同序号作业的相对顺序
+    if (new Set(found.map((row) => row.date)).size > 1) {
+      return res.status(400).json({ success: false, error: 'orders 只能包含同一日期的作业' });
     }
 
     const batch = db.transaction((d, items) => {
@@ -202,9 +223,12 @@ app.put('/api/homeworks/batch', (req, res) => {
     const params = [];
 
     if (data.subject_id !== undefined) {
-      const subjExists = db.get('SELECT id FROM subjects WHERE id = ?', data.subject_id);
-      if (!subjExists) {
-        return res.status(400).json({ success: false, error: '所选科目不存在' });
+      // null = 显式清空科目（与单个 PUT 的语义对齐）；只有非 null 才校验存在性
+      if (data.subject_id !== null) {
+        const subjExists = db.get('SELECT id FROM subjects WHERE id = ?', data.subject_id);
+        if (!subjExists) {
+          return res.status(400).json({ success: false, error: '所选科目不存在' });
+        }
       }
       updates.push('subject_id = ?'); params.push(data.subject_id);
     }
@@ -259,7 +283,14 @@ app.put('/api/homeworks/:id', (req, res) => {
       }
       updates.push('content = ?'); params.push(content);
     }
-    if (date !== undefined)      { updates.push('date = ?');       params.push(date); }
+    if (date !== undefined) {
+      // 修复前这里不校验，非法日期会落库 → 该作业因前端只按合法 YYYY-MM-DD
+      // 查询而永久不可见、无法编辑或删除
+      if (!isValidDate(date)) {
+        return res.status(400).json({ success: false, error: '日期格式必须为 YYYY-MM-DD' });
+      }
+      updates.push('date = ?'); params.push(date);
+    }
     if (completed !== undefined) {
       // completed 必须为 0 或 1（布尔/数字）
       const c = completed === true || completed === 1 ? 1 : (completed === false || completed === 0 ? 0 : null);
@@ -278,7 +309,7 @@ app.put('/api/homeworks/:id', (req, res) => {
       // deadline 格式校验：要么 null/空，要么 "YYYY-MM-DD HH:MM:SS"
       if (deadline === null || deadline === '') {
         updates.push('deadline = ?'); params.push(null);
-      } else if (typeof deadline === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(deadline)) {
+      } else if (isValidDeadline(deadline)) {
         updates.push('deadline = ?'); params.push(deadline);
       } else {
         return res.status(400).json({ success: false, error: 'deadline 格式必须为 YYYY-MM-DD HH:MM:SS' });

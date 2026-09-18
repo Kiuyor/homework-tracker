@@ -13,7 +13,11 @@ let db = null;
 function getDb() {
   if (!db) {
     db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
+    // 刻意不用 WAL：本项目是「单写入者（科代表录入）+ 非技术用户」场景，
+    // WAL 会把已提交数据留在 homework.db-wal 里，导致「备份=复制 homework.db」
+    // 这一说法失效（实测只复制单文件会丢数据）。DELETE 模式下事务提交后主库
+    // 即最新，备份模型对老师才真正成立。详见 tools/build-portable.sh 的 README。
+    db.pragma('journal_mode = DELETE');
     db.pragma('foreign_keys = ON');
     db.pragma('busy_timeout = 5000');
   }
