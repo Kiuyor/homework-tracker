@@ -18,10 +18,18 @@ window.api = async function (method, path, body) {
 window.loadHomeworks = async function () {
   const date = window.formatDate(window.AppState.currentDate);
   const reqId = ++_apiReqId;
-  const homeworks = await window.api('GET', '/api/homeworks?date=' + date);
-  if (reqId !== _apiReqId) return;
-  window.AppState.homeworks = homeworks;
-  window.renderHomeworks();
+  try {
+    const homeworks = await window.api('GET', '/api/homeworks?date=' + date);
+    if (reqId !== _apiReqId) return;
+    window.AppState.homeworks = homeworks;
+    window.renderHomeworks();
+    // 任何一次成功都熄灭离线角标（ui.js 提供，加载顺序上晚于本文件，故做存在性判断）
+    if (window.markRefreshResult) window.markRefreshResult(true);
+  } catch (err) {
+    // 失败累计到阈值才亮角标；异常仍向上抛，调用方原有提示逻辑不变
+    if (window.markRefreshResult) window.markRefreshResult(false);
+    throw err;
+  }
 };
 
 window.loadSubjects = async function () {

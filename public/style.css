@@ -762,6 +762,39 @@ body.view-show .batch-bar { display: none; }
 body.view-show .show-clock { display: flex; }
 body.dark-mode .show-clock { background: rgba(40, 40, 40, 0.85); }
 
+/* 离线角标（左下角）
+   设计意图：刷新连续失败时让老师知道「投影上的作业可能已经过期」，
+   但绝不能打扰展示 —— 所以固定在左下、不参与布局、不可点击、不弹窗。 */
+.offline-badge {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  z-index: 940;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-size: 13px;
+  line-height: 1;
+  pointer-events: none;   /* 绝不挡住任何点击 */
+  user-select: none;
+}
+.offline-badge.hidden { display: none; }
+.offline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-s5);   /* 橙红：醒目但不刺眼 */
+  flex: none;
+}
+body.dark-mode .offline-badge { background: rgba(40, 40, 40, 0.9); }
+/* 投影场景下略微放大，保证后排也能看见 */
+body.view-show .offline-badge { font-size: clamp(14px, 1.1vw, 20px); padding: 8px 18px; }
+
 /* 展示模式控制组（右下角：字号调节 + 退出按钮） */
 .show-ctrl {
   position: fixed;

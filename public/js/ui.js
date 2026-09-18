@@ -317,6 +317,22 @@ window.toggleViewMode = function () {
   }
 };
 
+// ============ 离线角标（不打扰） ============
+// 连续失败 OFFLINE_THRESHOLD 次才亮起（5 秒轮询 → 约 10 秒），
+// 避免单次网络抖动就闪一下；任何一次成功立即熄灭。
+// 角标固定在左下、position:fixed 不参与布局、pointer-events:none，
+// 因此既不会干扰 fitShowDisplay 的字号测量，也不会挡住任何点击。
+var OFFLINE_THRESHOLD = 2;
+window.markRefreshResult = function (ok) {
+  var state = window.AppState;
+  state.offlineFailures = ok ? 0 : (state.offlineFailures || 0) + 1;
+  var shouldShow = state.offlineFailures >= OFFLINE_THRESHOLD;
+  if (shouldShow === state.offlineShown) return; // 状态未变，不写 DOM
+  state.offlineShown = shouldShow;
+  var badge = document.getElementById('offlineBadge');
+  if (badge) badge.classList.toggle('hidden', !shouldShow);
+};
+
 // ============ Auto-refresh（展示模式 5 秒轮询） ============
 window.startAutoRefresh = function () {
   var state = window.AppState;

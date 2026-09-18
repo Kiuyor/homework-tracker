@@ -14,6 +14,8 @@ window.AppState = {
   refreshTimer: null,
   clockTimer: null,
   clockText: '', // 上次渲染的 HH:MM，避免每秒重复写 DOM
+  offlineFailures: 0,  // 连续刷新失败次数（离线角标用）
+  offlineShown: false, // 角标当前是否已显示，避免重复写 DOM
 };
 
 // ============ Date Helpers ============

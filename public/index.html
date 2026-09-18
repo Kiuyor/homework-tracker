@@ -154,6 +154,13 @@
   <!-- 展示模式时钟（右上角，精确到分） -->
   <div class="show-clock" id="showClock">--:--</div>
 
+  <!-- 离线角标（左下角）：刷新连续失败时才出现，恢复后自动消失。
+       position:fixed 不参与布局，不会干扰 fitShowDisplay 的字号测量；
+       pointer-events:none 保证它绝不挡住任何点击。 -->
+  <div class="offline-badge hidden" id="offlineBadge">
+    <span class="offline-dot"></span>离线 · 数据可能不是最新
+  </div>
+
   <!-- 展示模式控制（右下角：字号调节 + 退出） -->
   <div class="show-ctrl hidden" id="showCtrl">
     <div class="show-font" id="showFontCtrl">
