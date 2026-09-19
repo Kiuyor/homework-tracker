@@ -7,9 +7,77 @@ const app = express();
 
 // ============ 输入校验常量与辅助 ============
 const MAX_CONTENT_LEN = 5000;
-const MAX_NOTE_LEN = 2000;
+const MAX_SUBJECT_NAME_LEN = 50;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DEADLINE_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+
+// 科目必选（ADR-0005）：既没给 id 也没给名字 = 拒绝，没有"归到一个无科目分组"这条路。
+// POST 与 PUT、"不填" 与 "显式 null" 四条路共用这一句——它们本质是同一个问题。
+const SUBJECT_REQUIRED = '作业必须属于一个科目';
+
+// 主科优先表（ADR-0006）：墙上的先后是写死的常量，不是可拖出来的顺序，也不是可编辑
+// 数据——所以不启用 subjects.sort_order。名单本身在 db.js（它同时是启动时补齐六格的
+// 那份清单），这里只引用不复制：两份副本一旦漂移，墙上顺序与作业顺序会静默不一致。
+// 不在表上的科目一律落在 ELSE 那一档，再按 subjects.id（建立先后）追加在表尾。
+const SUBJECT_PRIORITY = db.SUBJECT_PRIORITY;
+
+// 用占位符而不是把科目名拼进 SQL：常量表将来若从配置读入，不会变成注入面。
+function priorityOrderSql(col) {
+  return 'CASE ' + col + ' ' +
+    SUBJECT_PRIORITY.map((name, i) => 'WHEN ? THEN ' + i).join(' ') +
+    ' ELSE ' + SUBJECT_PRIORITY.length + ' END';
+}
+
+
+// 科目是开放集：下拉里选到的是 id，直接敲进来的是 name。
+// 同一个事务里先 upsert 再写作业——name 上有 UNIQUE，INSERT OR IGNORE 天然幂等，
+// 「政治」录两次只会多出一条作业，不会多出一个分组、也不会多一行科目。
+// 返回 { id } 或 { error }：两者同时给且矛盾时不静默取其一，报错让人回来改。
+function resolveSubject(d, subjectId, subjectName) {
+  const hasId = subjectId !== undefined && subjectId !== null && subjectId !== '';
+  const raw = typeof subjectName === 'string' ? subjectName.trim() : '';
+  const hasName = raw !== '';
+
+  if (hasId && hasName) {
+    const row = d.prepare('SELECT id, name FROM subjects WHERE id = ?').get(subjectId);
+    if (!row) return { error: '所选科目不存在' };
+    if (row.name !== raw) {
+      return { error: 'subject_id 与 subject_name 指向不同科目，请只填其一' };
+    }
+    return { id: row.id };
+  }
+  if (hasId) {
+    const row = d.prepare('SELECT id FROM subjects WHERE id = ?').get(subjectId);
+    return row ? { id: row.id } : { error: '所选科目不存在' };
+  }
+  if (hasName) {
+    if (raw.length > MAX_SUBJECT_NAME_LEN) {
+      return { error: '科目名称不能超过' + MAX_SUBJECT_NAME_LEN + '字' };
+    }
+    d.prepare('INSERT OR IGNORE INTO subjects (name) VALUES (?)').run(raw);
+    const row = d.prepare('SELECT id FROM subjects WHERE name = ?').get(raw);
+    return { id: row.id };
+  }
+  return { error: SUBJECT_REQUIRED };
+}
+
+// 一科一条撞车：把 SQLite 的唯一约束异常翻成 409 + 一句人话。
+// 只认这一种异常——其余约束（外键、非空）与一切未知错误照旧往上抛，
+// 一个 catch 全吞成 409 会把"数据库坏了"伪装成"用户填错了"。
+function isUniqueConflict(err) {
+  return !!err && typeof err.code === 'string' &&
+    /^SQLITE_CONSTRAINT(_UNIQUE)?$/.test(err.code);
+}
+
+function conflictError(date, subjectName) {
+  return {
+    status: 409,
+    body: {
+      success: false,
+      error: `${date} 的「${subjectName}」已经有一条作业了；一科一条，请直接改那一条`,
+    },
+  };
+}
 
 // 校验 "YYYY-MM-DD"：格式合法且日期真实存在（拒绝 2026-13-45 之类）
 function isValidDate(s) {
@@ -55,7 +123,12 @@ app.get('/api/health', (req, res) => {
 // GET /api/subjects
 app.get('/api/subjects', (req, res) => {
   try {
-    const subjects = db.all('SELECT id, name FROM subjects ORDER BY sort_order');
+    // 墙上格子的顺序跟着这份列表走（ui.js 按 state.subjects 分组），所以主科优先表
+    // 在这里生效一次，下面那条 homeworks 查询再生效一次——两处共用同一份常量。
+    const subjects = db.all(
+      'SELECT id, name FROM subjects ORDER BY ' + priorityOrderSql('name') + ', id',
+      ...SUBJECT_PRIORITY
+    );
     res.json({ success: true, data: subjects });
   } catch (err) {
     console.error('获取科目失败:', err);
@@ -69,7 +142,7 @@ app.get('/api/homeworks', (req, res) => {
     const { date } = req.query;
 
     let sql = `
-      SELECT h.id, h.content, h.date, h.completed, h.note,
+      SELECT h.id, h.content, h.date,
              h.deadline, h.sort_order, h.subject_id, h.created_at, h.updated_at,
              COALESCE(s.name, '') AS subject_name
       FROM homeworks h
@@ -83,7 +156,10 @@ app.get('/api/homeworks', (req, res) => {
       params.push(date);
     }
 
-    sql += ' ORDER BY h.sort_order ASC, h.created_at ASC';
+    // 一科一条（ADR-0006）：顺序由主科优先表决定，h.sort_order 不再有读者
+    // （列保留、统一写 0，见本文件 POST 侧），h.id 做稳定次序。
+    sql += ' ORDER BY ' + priorityOrderSql('s.name') + ', h.subject_id ASC, h.id ASC';
+    params.push(...SUBJECT_PRIORITY);
 
     const homeworks = db.all(sql, ...params);
     res.json({ success: true, data: homeworks });
@@ -96,7 +172,15 @@ app.get('/api/homeworks', (req, res) => {
 // POST /api/homeworks
 app.post('/api/homeworks', (req, res) => {
   try {
-    const { subject_id, content, date, note, deadline } = req.body;
+    const { subject_id, subject_name, content, date, note, deadline, completed } = req.body;
+
+    // 作业墙只回答「今天有什么」，不回答「哪条已交」「备注是什么」——见 docs/adr/0002
+    if (completed !== undefined) {
+      return res.status(400).json({ success: false, error: '作业墙不记录完成状态，completed 不接受写入' });
+    }
+    if (note !== undefined) {
+      return res.status(400).json({ success: false, error: '作业墙不记录备注，note 不接受写入' });
+    }
 
     if (!content || !date) {
       return res.status(400).json({ success: false, error: '内容和日期为必填项' });
@@ -110,44 +194,62 @@ app.post('/api/homeworks', (req, res) => {
       return res.status(400).json({ success: false, error: 'deadline 格式必须为 YYYY-MM-DD HH:MM:SS' });
     }
 
-    if (subject_id) {
-      const subjExists = db.get('SELECT id FROM subjects WHERE id = ?', subject_id);
-      if (!subjExists) {
-        return res.status(400).json({ success: false, error: '所选科目不存在' });
-      }
-    }
-
     if (content.length > MAX_CONTENT_LEN) {
       return res.status(400).json({ success: false, error: '作业内容不能超过5000字' });
     }
-    if (note && note.length > MAX_NOTE_LEN) {
-      return res.status(400).json({ success: false, error: '备注不能超过2000字' });
-    }
 
-    const insertHomework = db.transaction((d, subjId, content, date, note, deadline) => {
-      const maxRow = d.prepare(
-        'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM homeworks WHERE date = ?'
-      ).get(date);
-      const nextSort = parseInt(maxRow.next) || 0;
+    // 科目在这里定稿：可能新建一行 subject，所以与写作业同处一个事务。
+    // 校验失败用带标记的异常冒泡——事务自动回滚，新科目不会留下半条。
+    const insertHomework = db.transaction((d, subjId, subjName, content, date, deadline) => {
+      const subj = resolveSubject(d, subjId, subjName);
+      if (subj.error) {
+        const e = new Error(subj.error);
+        e.subjectError = subj.error;
+        throw e;
+      }
 
-      const result = d.prepare(
-        'INSERT INTO homeworks (subject_id, content, date, note, deadline, sort_order) VALUES (?, ?, ?, ?, ?, ?)'
-      ).run(subjId || null, content, date, note || '', deadline || null, nextSort);
+      // sort_order 列保留但不再有读者：一科一条之后墙上顺序由主科优先表决定。
+      let result;
+      try {
+        result = d.prepare(
+          'INSERT INTO homeworks (subject_id, content, date, deadline) VALUES (?, ?, ?, ?)'
+        ).run(subj.id, content, date, deadline || null);
+      } catch (err) {
+        if (isUniqueConflict(err)) {
+          // 科目名要在事务里读：subject_name 这条路可能刚 upsert 出一行新科目，
+          // 出了事务它就被回滚掉了，事后再查会查个空。
+          const row = d.prepare('SELECT name FROM subjects WHERE id = ?').get(subj.id);
+          err.conflict = { date, subjectName: row ? row.name : '该科目' };
+        }
+        throw err;
+      }
 
       const newRow = d.prepare(
-        'SELECT id, subject_id, content, date, completed, note, deadline, sort_order, created_at, updated_at FROM homeworks WHERE id = ?'
+        'SELECT id, subject_id, content, date, deadline, sort_order, created_at, updated_at FROM homeworks WHERE id = ?'
       ).get(result.lastInsertRowid);
 
       let subjectName = '';
       if (newRow.subject_id) {
-        const subj = d.prepare('SELECT name FROM subjects WHERE id = ?').get(newRow.subject_id);
-        subjectName = subj ? subj.name : '';
+        const subj2 = d.prepare('SELECT name FROM subjects WHERE id = ?').get(newRow.subject_id);
+        subjectName = subj2 ? subj2.name : '';
       }
 
       return { ...newRow, subject_name: subjectName };
     });
 
-    const homework = insertHomework(subject_id, content, date, note, deadline);
+    let homework;
+    try {
+      homework = insertHomework(subject_id, subject_name, content, date, deadline);
+    } catch (err) {
+      if (err.subjectError) {
+        return res.status(400).json({ success: false, error: err.subjectError });
+      }
+      if (err.conflict) {
+        const c = conflictError(err.conflict.date, err.conflict.subjectName);
+        return res.status(c.status).json(c.body);
+      }
+      throw err;
+    }
     res.status(201).json({ success: true, data: homework });
   } catch (err) {
     console.error('添加作业失败:', err);
@@ -155,124 +257,20 @@ app.post('/api/homeworks', (req, res) => {
   }
 });
 
-// PUT /api/homeworks/reorder
-app.put('/api/homeworks/reorder', (req, res) => {
-  try {
-    const { orders } = req.body;
-
-    if (!Array.isArray(orders)) {
-      return res.status(400).json({ success: false, error: 'orders 必须为数组' });
-    }
-    // 空数组：保持原有的幂等无操作语义
-    if (orders.length === 0) {
-      return res.json({ success: true, message: '排序已更新' });
-    }
-    // 元素校验：每个必须是 {id: 正整数, sort_order: 整数}
-    for (const item of orders) {
-      if (!item || !Number.isInteger(item.id) || item.id <= 0 || !Number.isInteger(item.sort_order)) {
-        return res.status(400).json({ success: false, error: 'orders 元素必须为 {id: 正整数, sort_order: 整数}' });
-      }
-    }
-
-    // id 必须真实存在 —— 否则会返回 200「排序已更新」，让前端把失败当成功
-    const ids = orders.map((item) => item.id);
-    const placeholders = ids.map(() => '?').join(', ');
-    const found = db.all(`SELECT id, date FROM homeworks WHERE id IN (${placeholders})`, ...ids);
-    if (found.length !== ids.length) {
-      return res.status(400).json({ success: false, error: 'orders 中存在不存在的作业 id' });
-    }
-
-    // 排序只在同一日期内有意义：跨日期会打乱其它日期中同序号作业的相对顺序
-    if (new Set(found.map((row) => row.date)).size > 1) {
-      return res.status(400).json({ success: false, error: 'orders 只能包含同一日期的作业' });
-    }
-
-    const batch = db.transaction((d, items) => {
-      const stmt = d.prepare('UPDATE homeworks SET sort_order = ? WHERE id = ?');
-      for (const item of items) {
-        stmt.run(item.sort_order, item.id);
-      }
-    });
-    batch(orders);
-
-    res.json({ success: true, message: '排序已更新' });
-  } catch (err) {
-    console.error('重排序失败:', err);
-    res.status(500).json({ success: false, error: '重排序失败' });
-  }
-});
-
-// PUT /api/homeworks/batch
-app.put('/api/homeworks/batch', (req, res) => {
-  try {
-    const { ids, data } = req.body;
-
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ success: false, error: 'ids 必须为非空数组' });
-    }
-    if (!data || typeof data !== 'object') {
-      return res.status(400).json({ success: false, error: 'data 必须为对象' });
-    }
-
-    // ids 元素必须为正整数
-    if (ids.some((id) => typeof id !== 'number' || !Number.isInteger(id) || id <= 0)) {
-      return res.status(400).json({ success: false, error: 'ids 元素必须为正整数' });
-    }
-
-    const updates = [];
-    const params = [];
-
-    if (data.subject_id !== undefined) {
-      // null = 显式清空科目（与单个 PUT 的语义对齐）；只有非 null 才校验存在性
-      if (data.subject_id !== null) {
-        const subjExists = db.get('SELECT id FROM subjects WHERE id = ?', data.subject_id);
-        if (!subjExists) {
-          return res.status(400).json({ success: false, error: '所选科目不存在' });
-        }
-      }
-      updates.push('subject_id = ?'); params.push(data.subject_id);
-    }
-    if (data.note !== undefined) {
-      if (typeof data.note !== 'string' || data.note.length > MAX_NOTE_LEN) {
-        return res.status(400).json({ success: false, error: '备注不能超过2000字' });
-      }
-      updates.push('note = ?'); params.push(data.note);
-    }
-    if (data.content !== undefined) {
-      if (typeof data.content !== 'string' || data.content.length > MAX_CONTENT_LEN) {
-        return res.status(400).json({ success: false, error: '作业内容不能超过5000字' });
-      }
-      updates.push('content = ?'); params.push(data.content);
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({ success: false, error: '没有需要更新的字段' });
-    }
-
-    const placeholders = ids.map(() => '?').join(', ');
-    params.push(...ids);
-    const result = db.run(
-      `UPDATE homeworks SET ${updates.join(', ')} WHERE id IN (${placeholders})`,
-      ...params
-    );
-
-    res.json({ success: true, message: `已更新 ${result.changes} 条作业` });
-  } catch (err) {
-    console.error('批量更新失败:', err);
-    res.status(500).json({ success: false, error: '批量更新失败' });
-  }
-});
-
 // PUT /api/homeworks/:id
 app.put('/api/homeworks/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { content, date, completed, note, sort_order, subject_id, deadline } = req.body;
+    const { content, date, completed, note, subject_id, subject_name, deadline } = req.body;
 
-    const existing = db.get('SELECT id FROM homeworks WHERE id = ?', id);
+    const existing = db.get('SELECT id, date, subject_id FROM homeworks WHERE id = ?', id);
     if (!existing) {
       return res.status(404).json({ success: false, error: '作业不存在' });
     }
+
+    // 撞车时报的是"哪一天哪一科"，所以记下本次要写进去的最终值：未提交的字段沿用原值。
+    let effDate = existing.date;
+    let effSubjectId = existing.subject_id;
 
     const updates = [];
     const params = [];
@@ -290,20 +288,14 @@ app.put('/api/homeworks/:id', (req, res) => {
         return res.status(400).json({ success: false, error: '日期格式必须为 YYYY-MM-DD' });
       }
       updates.push('date = ?'); params.push(date);
+      effDate = date;
     }
     if (completed !== undefined) {
-      // completed 必须为 0 或 1（布尔/数字）
-      const c = completed === true || completed === 1 ? 1 : (completed === false || completed === 0 ? 0 : null);
-      if (c === null) {
-        return res.status(400).json({ success: false, error: 'completed 必须为 0 或 1' });
-      }
-      updates.push('completed = ?'); params.push(c);
+      // 列仍在库里（ADR-0002：删的是能力不是存储），但不再有写入方
+      return res.status(400).json({ success: false, error: '作业墙不记录完成状态，completed 不接受写入' });
     }
     if (note !== undefined) {
-      if (typeof note !== 'string' || note.length > MAX_NOTE_LEN) {
-        return res.status(400).json({ success: false, error: '备注不能超过2000字' });
-      }
-      updates.push('note = ?'); params.push(note);
+      return res.status(400).json({ success: false, error: '作业墙不记录备注，note 不接受写入' });
     }
     if (deadline !== undefined)  {
       // deadline 格式校验：要么 null/空，要么 "YYYY-MM-DD HH:MM:SS"
@@ -315,20 +307,18 @@ app.put('/api/homeworks/:id', (req, res) => {
         return res.status(400).json({ success: false, error: 'deadline 格式必须为 YYYY-MM-DD HH:MM:SS' });
       }
     }
-    if (subject_id !== undefined) {
-      if (subject_id !== null) {
-        const subjExists = db.get('SELECT id FROM subjects WHERE id = ?', subject_id);
-        if (!subjExists) {
-          return res.status(400).json({ success: false, error: '所选科目不存在' });
-        }
+    if (subject_id !== undefined || subject_name !== undefined) {
+      // 与 POST 同一条解析：可以选已有科目，也可以敲新名自动建科。
+      // 自动建科单独成事务（建到一半也不会留下半个科目），但不与下面的 UPDATE 同事务：
+      // 万一 UPDATE 失败，多出来的只是一行没人引用的科目，下次录同名时被 UNIQUE 复用。
+      // 把科目清空又不给名字 → resolveSubject 认成"没填科目"，与 POST 同一条 400。
+      const resolveInTx = db.transaction((d) => resolveSubject(d, subject_id, subject_name));
+      const r = resolveInTx();
+      if (r.error) {
+        return res.status(400).json({ success: false, error: r.error });
       }
-      updates.push('subject_id = ?'); params.push(subject_id);
-    }
-    if (sort_order !== undefined){
-      if (typeof sort_order !== 'number' || !Number.isInteger(sort_order)) {
-        return res.status(400).json({ success: false, error: 'sort_order 必须为整数' });
-      }
-      updates.push('sort_order = ?'); params.push(sort_order);
+      updates.push('subject_id = ?'); params.push(r.id);
+      effSubjectId = r.id;
     }
 
     if (updates.length === 0) {
@@ -336,10 +326,20 @@ app.put('/api/homeworks/:id', (req, res) => {
     }
 
     params.push(id);
-    db.run(`UPDATE homeworks SET ${updates.join(', ')} WHERE id = ?`, ...params);
+    try {
+      db.run(`UPDATE homeworks SET ${updates.join(', ')} WHERE id = ?`, ...params);
+    } catch (err) {
+      if (!isUniqueConflict(err)) throw err;
+      // 改挂到当天已占用的科目 = 制造第二条。占位者是谁要点名出来，
+      // 科代表看到这句才知道该去改那一条，而不是以为自己点错了按钮。
+      const subj = db.get('SELECT name FROM subjects WHERE id = ?', effSubjectId);
+      const c = conflictError(effDate, subj ? subj.name : '该科目');
+      return res.status(c.status).json(c.body);
+    }
 
     const homework = db.get(`
-      SELECT h.*, COALESCE(s.name, '') AS subject_name
+      SELECT h.id, h.subject_id, h.content, h.date, h.deadline, h.sort_order,
+             h.created_at, h.updated_at, COALESCE(s.name, '') AS subject_name
       FROM homeworks h
       LEFT JOIN subjects s ON h.subject_id = s.id
       WHERE h.id = ?

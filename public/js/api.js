@@ -8,10 +8,12 @@ window.api = async function (method, path, body) {
   if (!res.ok) {
     let errMsg = '请求失败 (' + res.status + ')';
     try { const json = await res.json(); errMsg = json.error || errMsg; } catch (e) {}
-    throw new Error(errMsg);
+    // status 挂在异常上：调用方据此区分"后端说了这句话"与"请求根本没回来"，
+    // 前者原样上屏（409 要点名该去改哪一条），后者才自己造一句。
+    const err = new Error(errMsg); err.status = res.status; throw err;
   }
   const json = await res.json();
-  if (!json.success) throw new Error(json.error || '请求失败');
+  if (!json.success) { const err = new Error(json.error || '请求失败'); err.status = res.status; throw err; }
   return json.data;
 };
 
@@ -25,7 +27,7 @@ function renderSignature(date, state, list) {
   parts.push('|');
   for (var j = 0; j < list.length; j++) {
     var h = list[j];
-    parts.push([h.id, h.subject_id, h.content, h.date, h.completed, h.note, h.deadline, h.sort_order].join('\u0001'));
+    parts.push([h.id, h.subject_id, h.content, h.date, h.deadline, h.sort_order].join('\u0001'));
   }
   return parts.join('\u0002');
 }
@@ -71,19 +73,4 @@ window.updateHomework = async function (id, data) {
 
 window.deleteHomework = async function (id) {
   return await window.api('DELETE', '/api/homeworks/' + id);
-};
-
-window.toggleHomeworkDone = async function (id) {
-  // 先取当前状态再翻转
-  var hw = window.AppState.homeworks.find(function (h) { return h.id === id; });
-  var next = hw ? (hw.completed ? 0 : 1) : 1;
-  return await window.api('PUT', '/api/homeworks/' + id, { completed: next });
-};
-
-window.reorderHomeworks = async function (orders) {
-  return await window.api('PUT', '/api/homeworks/reorder', { orders: orders });
-};
-
-window.batchUpdateHomeworks = async function (ids, data) {
-  return await window.api('PUT', '/api/homeworks/batch', { ids: ids, data: data });
 };

@@ -48,6 +48,13 @@ function run(queryText, ...params) {
 }
 
 /**
+ * 读 PRAGMA（迁移分支与测试要检查索引是否真的建上了）
+ */
+function pragma(what) {
+  return getDb().pragma(what);
+}
+
+/**
  * 事务包装 — 传入回调 fn(db) 在同一事务内执行
  */
 function transaction(fn) {
@@ -75,8 +82,8 @@ function initTables() {
       subject_id INTEGER REFERENCES subjects(id),
       content TEXT NOT NULL,
       date TEXT NOT NULL,
-      completed INTEGER NOT NULL DEFAULT 0,
-      note TEXT DEFAULT '',
+      completed INTEGER NOT NULL DEFAULT 0, -- 列保留但已无读写方，见 docs/adr/0002
+      note TEXT DEFAULT '', -- 列保留但已无读写方，见 docs/adr/0002
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now', 'localtime')),
       updated_at TEXT DEFAULT (datetime('now', 'localtime'))
@@ -96,6 +103,33 @@ function initTables() {
   // 排序索引
   db.exec(`CREATE INDEX IF NOT EXISTS idx_homeworks_date_sort ON homeworks(date, sort_order)`);
 
+  // 一科一条（ADR-0005）：把「同一天同一科目至多一条」从既成事实升级成真约束。
+  // 先探一次重复再决定建不建——CREATE UNIQUE INDEX 在有重复的表上是抛错的，
+  // 而"部署到一个历史脏库"不该让服务起不来。这里不合并不删除（迁移不猜意图），
+  // 只把冲突点到哪一天哪一科打印出来，让运维能直接处理。
+  // WHERE subject_id IS NOT NULL：SQLite 的唯一索引不把 NULL 视为相等，
+  // 探测范围必须和索引真正拦的东西一致，否则历史「其他」条目会无故挡住建索引。
+  const conflicts = db.prepare(`
+    SELECT date, subject_id, COUNT(*) AS n FROM homeworks
+    WHERE subject_id IS NOT NULL
+    GROUP BY date, subject_id HAVING COUNT(*) > 1
+    ORDER BY date, subject_id
+  `).all();
+
+  if (conflicts.length) {
+    const nameOf = db.prepare('SELECT name FROM subjects WHERE id = ?');
+    console.log(`⚠️ 唯一索引 idx_homeworks_date_subject 未建立：库里有 ${conflicts.length} 组「同日同科多条」`);
+    for (const c of conflicts) {
+      const row = nameOf.get(c.subject_id);
+      console.log(`   ${c.date} · ${row ? row.name : '科目#' + c.subject_id} · ${c.n} 条`);
+    }
+  } else {
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_homeworks_date_subject
+      ON homeworks(date, subject_id)
+    `);
+  }
+
   // 迁移：添加 deadline 列
   try {
     db.exec(`ALTER TABLE homeworks ADD COLUMN deadline TEXT DEFAULT NULL`);
@@ -104,16 +138,19 @@ function initTables() {
   }
 }
 
+// 主科优先表（ADR-0006）：展示态那六个格子就是这份名单。它同时是
+// 「db.js 要保证存在的行」与「api/index.js 排序的依据」——两份会漂移的副本
+// 正是这张票点名最大的设计风险，所以清单只在这里写一次。
+const SUBJECT_PRIORITY = ['语文', '数学', '英语', '物理', '化学', '生物'];
+
+// 每次启动都补齐，而不是只在空表时种一次：库里恰好缺「语文」那一行，墙上就永远少一格，
+// 而"格子=科目、左上永远是语文"是展示态的既定形状（工单 024）。
+// INSERT OR IGNORE 只可能新增、绝不碰已有行——用户自建的科目与改过的名字不受影响。
 function seedSubjects() {
   const db = getDb();
-  const existing = db.prepare('SELECT COUNT(*) AS cnt FROM subjects').get();
-  if (existing.cnt > 0) return; // 已有科目数据，跳过种子写入，避免覆盖用户自定义
-
-  const subjects = ['语文', '数学', '英语', '物理', '化学', '生物'];
-  const insert = db.prepare('INSERT OR REPLACE INTO subjects (id, name) VALUES (?, ?)');
-
+  const insert = db.prepare('INSERT OR IGNORE INTO subjects (name) VALUES (?)');
   db.transaction(() => {
-    subjects.forEach((name, i) => insert.run(i + 1, name));
+    for (const name of SUBJECT_PRIORITY) insert.run(name);
   })();
 }
 
@@ -140,4 +177,4 @@ function close() {
   }
 }
 
-module.exports = { all, get, run, transaction, ensureInit, close };
+module.exports = { all, get, run, pragma, transaction, ensureInit, close, SUBJECT_PRIORITY };

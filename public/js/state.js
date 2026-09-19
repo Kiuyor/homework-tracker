@@ -4,15 +4,18 @@ window.AppState = {
   homeworks: [],
   subjects: [],
   editingId: null,
+  subjectConvertedId: null, // editingId 是由「添加」里选科目转出来的（换科目时要退回新建）
   editingDeadline: null, // 编辑中的作业原始 deadline，用于「只改时间不改日期」
-  dragSrcId: null,
+  deadlineOwnerDate: null, // 「当天/次日」的基准日 = 正在编辑条目的所属日（新建时为查看日）
+  deadlineDayOffset: 0, // 0=当天 1=次日 null=原始 deadline 落在两档之外
   fontSize: 44,
   filterSubjectId: null,
-  batchMode: false,
-  selectedIds: [],
-  viewMode: 'edit', // 'edit' | 'show'
+  viewMode: 'show', // 'edit' | 'show'，默认展示态（ADR-0003：编辑是显式进入的临时态）
   refreshTimer: null,
   clockTimer: null,
+  editIdleTimer: null,   // 编辑态闲置回弹，独立句柄（不与轮询/时钟共用）
+  editIdleAt: 0,         // 最近一次「活跃活动」的时间戳
+  editIdleWarnedAt: 0,   // 上次弹「即将回到展示」预告的时间，避免每秒重复弹
   clockText: '', // 上次渲染的 HH:MM，避免每秒重复写 DOM
   offlineFailures: 0,  // 连续刷新失败次数（离线角标用）
   offlineShown: false, // 角标当前是否已显示，避免重复写 DOM
@@ -45,6 +48,14 @@ window.formatDisplay = function (date) {
     window.formatDate(date) === window.formatDate(yesterday) ? '昨天' : '';
   const dateStr = `${date.getMonth() + 1}月${date.getDate()}日`;
   return diff ? `${diff} ${dateStr} ${window.getWeekday(date)}` : `${dateStr} ${window.getWeekday(date)}`;
+};
+
+window.dayWord = function (date) {
+  // 「今天 / 明天 / 昨天 / 9月25日」——与顶部日期标签同一套指代，不各写一份。
+  // 空墙文案要用它：写死「今天」会让翻到昨天的整屏文案指错日子。
+  var label = window.formatDisplay(date);
+  var m = label.match(/^(今天|明天|昨天)/);
+  return m ? m[1] : label.split(' ')[0];
 };
 
 window.changeDate = function (delta) {

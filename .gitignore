@@ -10,3 +10,6 @@ homework.db-wal
 
 # 绿色版打包产物（构建输出，含 node.exe 运行时，体积大）
 release/
+
+# 拆单产生的工单（工作态，可由 docs/specs/ 重生成；耐久记录在 docs/adr 与 docs/specs）
+.scratch/

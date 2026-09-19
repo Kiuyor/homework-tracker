@@ -7,17 +7,14 @@ function subjectColor(name) {
   // 按科目在 state.subjects 中的序号取色 → 同一科目跨编辑/展示模式配色稳定
   var subs = (window.AppState && window.AppState.subjects) || [];
   var idx = subs.findIndex(function (s) { return s.name === name; });
-  if (idx === -1) idx = Object.keys(_colorCache).length; // 未知科目（如「其他」）兜底
+  if (idx === -1) idx = Object.keys(_colorCache).length; // 不在 state.subjects 里（首轮未到位）→ 顺延取色
   _colorCache[name] = 'var(--c-s' + (idx % SUBJECT_COLOR_COUNT + 1) + ')';
   return _colorCache[name];
 }
 
 // ============ SVG 图标（统一尺寸，stroke 继承 currentColor） ============
 var ICON = {
-  check: '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>',
-  pencil: '<svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
   trash: '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
-  grip: '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>',
   clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'
 };
 
@@ -26,14 +23,12 @@ window.renderHomeworks = function () {
   var dom = window.AppDom;
   var state = window.AppState;
   var groupsEl = dom.subjectGroups;
-  // 重渲染会销毁整棵子树。滚动容器有两种：
-  //   · show-overflow 兜底布局下是 .main（overflow-y:auto）
-  //   · 编辑模式下是文档本身（window）
-  // 两种都记住并在渲染后还原，避免滚到一半被弹回顶部。
-  var prevScrollMain = dom.main ? dom.main.scrollTop : 0;
+  // 重渲染会销毁整棵子树，滚动位置随之丢失——编辑态下列表长到屏幕外时，
+  // 滚到一半被 5 秒轮询弹回顶部是最刺眼的退化。渲染后原样还原。
+  // （展示态平时确实没有滚动这回事：装不下先压间距、再缩字号。只有压到字号下限
+  //   仍装不下的兜底档才让整面墙可滚，见 fitShowDisplay 与 ADR-0007。）
   var prevScrollWin = window.scrollY || document.documentElement.scrollTop || 0;
   function restoreScroll() {
-    if (dom.main && prevScrollMain > 0) dom.main.scrollTop = prevScrollMain;
     if (prevScrollWin > 0) window.scrollTo(0, prevScrollWin);
   }
   groupsEl.innerHTML = '';
@@ -45,19 +40,31 @@ window.renderHomeworks = function () {
   }
 
   if (list.length === 0) {
-    var emptyText = state.homeworks.length === 0
-      ? '今天还没有作业'
-      : '该科目今天没有作业';
-    groupsEl.innerHTML = '<div class="empty-line">' + emptyText + '</div>';
+    var word = window.dayWord(state.currentDate);
+    var emptyText;
+    if (state.homeworks.length !== 0) {
+      emptyText = '该科目' + word + '没有作业';
+    } else if (state.viewMode === 'show') {
+      // 展示态整日为空是给全班看的一句话，不借用编辑态那句口吻
+      emptyText = { 今天: '今日作业待公布', 明天: '明日作业待公布', 昨天: '昨天未布置作业' }[word]
+        || (word + '未布置作业');
+    } else {
+      emptyText = word + '还没有作业'; // 编辑态维持现状：不加「去添加」之类的 CTA
+    }
+    var emptyEl = document.createElement('div');
+    emptyEl.className = 'empty-line';
+    emptyEl.textContent = emptyText; // 走 textContent 而不是拼 innerHTML
+    groupsEl.appendChild(emptyEl);
     if (state.viewMode === 'show') window.fitShowDisplay();
     restoreScroll();
     return;
   }
 
-  // 按科目分组（保持 subjects 顺序）
+  // 按科目分组（保持 subjects 顺序）。两套口径是刻意的，别"统一"掉（工单 024 故事 37）：
+  // 展示态给全班看，格子=科目且六格常驻，没布置的格子也要占位，位置天天一样才靠得住；
+  // 编辑态只列真有作业的行，科代表面对的是"今天哪几科留了东西"，六行空格子是噪声。
   var groups = [];
   if (state.viewMode === 'show') {
-    // 展示模式：所有科目占位，无作业显示「暂无作业」
     state.subjects.forEach(function (s) {
       var items = list.filter(function (h) { return h.subject_id === s.id; });
       groups.push({ name: s.name, items: items, empty: items.length === 0 });
@@ -67,11 +74,6 @@ window.renderHomeworks = function () {
       var items = list.filter(function (h) { return h.subject_id === s.id; });
       if (items.length) groups.push({ name: s.name, items: items });
     });
-  }
-  // 未分配科目的放最后（编辑模式才显示）
-  if (state.viewMode !== 'show') {
-    var noSubj = list.filter(function (h) { return !h.subject_id; });
-    if (noSubj.length) groups.push({ name: '其他', items: noSubj });
   }
 
   groups.forEach(function (group) {
@@ -83,21 +85,20 @@ window.renderHomeworks = function () {
 
     var head = document.createElement('div');
     head.className = 'subject-head';
-    head.innerHTML =
-      '<span class="subject-name">' + window.escapeHtml(group.name) + '</span>' +
-      '<span class="subject-count">' + group.items.length + ' 条</span>';
+    // 格子里恒为一条（ADR-0005），「N 条」失去信息量，格子头只剩科目名（故事 26）
+    head.innerHTML = '<span class="subject-name">' + window.escapeHtml(group.name) + '</span>';
     sec.appendChild(head);
 
     var ul = document.createElement('ul');
     ul.className = 'hw-list';
 
-    // 展示模式空科目：占位提示
+    // 格子级空态：说这一科没留作业，不是说今天没人录（整墙级那句在上面的 list.length===0 分支）
     if (group.empty) {
       var emptyLi = document.createElement('li');
       emptyLi.className = 'hw-empty';
       var emptySpan = document.createElement('span');
       emptySpan.className = 'empty-text';
-      emptySpan.textContent = '暂无作业';
+      emptySpan.textContent = '未布置';
       emptyLi.appendChild(emptySpan);
       ul.appendChild(emptyLi);
       sec.appendChild(ul);
@@ -111,23 +112,15 @@ window.renderHomeworks = function () {
       li.dataset.id = hw.id;
       li.setAttribute('data-subject', group.name);
       li.style.setProperty('--subject-color', color);
-      li.draggable = !state.batchMode && state.viewMode === 'edit';
 
       var actionsHtml = '';
-      if (state.batchMode) {
-        li.classList.add('selectable');
-        var isSelected = state.selectedIds.indexOf(hw.id) !== -1;
-        if (isSelected) li.classList.add('selected');
-        actionsHtml = '<span class="checkbox">' + ICON.check + '</span>';
-        li.addEventListener('click', function () { window.toggleSelectHomework(hw.id); });
-      } else if (state.viewMode === 'edit') {
+      if (state.viewMode === 'edit') {
+        // 一科一条之后点整行就是改那一科，编辑钮没有存在理由；
+        // 删除钮留着——它是危险动作，不给「整行即触发」的便利性。
         actionsHtml =
           '<div class="row-actions">' +
-            '<button class="row-action-btn done-btn" data-id="' + hw.id + '" title="标记完成">' + ICON.check + '</button>' +
-            '<button class="row-action-btn edit" data-id="' + hw.id + '" title="编辑">' + ICON.pencil + '</button>' +
             '<button class="row-action-btn del" data-id="' + hw.id + '" title="删除">' + ICON.trash + '</button>' +
-          '</div>' +
-          '<div class="drag-handle" title="拖动排序">' + ICON.grip + '</div>';
+          '</div>';
       }
 
       var metaHtml = '';
@@ -145,17 +138,11 @@ window.renderHomeworks = function () {
         '</div>' +
         actionsHtml;
 
-      if (state.viewMode === 'edit' && !state.batchMode) {
-        li.querySelector('.done-btn').addEventListener('click', async function () {
-          try {
-            var updated = await window.toggleHomeworkDone(hw.id);
-            window.showToast(updated && updated.completed ? '已标记完成' : '已取消完成', 'success');
-            window.loadHomeworks();
-          } catch (err) {
-            window.showToast('操作失败: ' + err.message, 'error');
-          }
-        });
-        li.querySelector('.edit').addEventListener('click', function () {
+      if (state.viewMode === 'edit') {
+        // 点整行即改。删除钮内部是 button>svg，e.target 往往是图标而不是按钮本身，
+        // 所以用 closest 判"这一下落在删除钮上吗"，不能用 ===。
+        li.addEventListener('click', function (e) {
+          if (e.target.closest && e.target.closest('.row-action-btn.del')) return;
           window.openEditModal(hw);
         });
         li.querySelector('.del').addEventListener('click', async function () {
@@ -168,14 +155,6 @@ window.renderHomeworks = function () {
             window.showToast('删除失败: ' + err.message, 'error');
           }
         });
-
-        li.addEventListener('dragstart', window.handleDragStart);
-        li.addEventListener('dragend', window.handleDragEnd);
-        li.addEventListener('dragenter', window.handleDragEnter);
-        li.addEventListener('dragleave', window.handleDragLeave);
-        li.addEventListener('dragover', window.handleDragOver);
-        li.addEventListener('drop', window.handleDrop);
-        window.setupTouchDrag(li);
       }
 
       ul.appendChild(li);
@@ -189,7 +168,8 @@ window.renderHomeworks = function () {
   if (state.viewMode === 'show') {
     window.fitShowDisplay();
   }
-  // 放在 fitShowDisplay 之后：它会切换 show-overflow 布局，进而决定 .main 能否滚动
+  // 放在 fitShowDisplay 之后：兜底档会把墙高放开、行轨重新分配，
+  // 滚动位置要在最终布局定下来后才对得上
   restoreScroll();
 };
 
@@ -199,10 +179,20 @@ window.applyFontSize = function (size) {
 };
 
 // ============ Deadline Formatting ============
-// 展示：默认只显示 "14:30"；当截止日期与作业日期不是同一天时（跨天截止）
-// 额外显示 "MM-DD"，否则用户看不出这条截止时间其实是明天/后天。
+// 所属日的次日，返回 "YYYY-MM-DD"；跨月/跨年交给 Date 进位
+function nextDayStr(dateStr) {
+  var p = String(dateStr || '').split('-');
+  if (p.length !== 3) return '';
+  var d = new Date(+p[0], +p[1] - 1, +p[2] + 1);
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+// 展示：当天截止只显示 "14:30"；次日显示 "次日 07:30"（周一录周二交的 mainstream 场景）；
+// 再往后的日期（历史数据/API 直写）才退化成 "MM-DD"，否则用户看不出这条其实是哪天。
 // 安全：解析失败一律返回空串，绝不把原始字符串插入 innerHTML（防存储型 XSS）
-function formatDeadline(raw, hwDate) {
+window.formatDeadline = function (raw, hwDate) {
   if (!raw) return '';
   var d = new Date(raw.replace(' ', 'T'));
   if (isNaN(d.getTime())) {
@@ -218,8 +208,10 @@ function formatDeadline(raw, hwDate) {
   var mm = (d.getMonth() + 1).toString().padStart(2, '0');
   var dd = d.getDate().toString().padStart(2, '0');
   var dlDate = d.getFullYear() + '-' + mm + '-' + dd;
-  return (hwDate && dlDate !== hwDate) ? (mm + '-' + dd + ' ' + hhmm) : hhmm;
-}
+  if (!hwDate || dlDate === hwDate) return hhmm;
+  if (dlDate === nextDayStr(hwDate)) return '次日 ' + hhmm;
+  return mm + '-' + dd + ' ' + hhmm;
+};
 
 // 编辑回显：数据库 "2026-07-10 14:30:00" → 输入框 "14:30"
 function formatDeadlineInput(raw) {
@@ -232,35 +224,71 @@ function formatDeadlineInput(raw) {
 }
 
 // 手动输入解析：只接受时间 "14:30" / "8:00" / "18:05"
-// baseDateStr 为 "YYYY-MM-DD"，决定截止时间落在哪一天：
-//   · 编辑时传「原 deadline 的日期」—— 修复前这里固定用今天，
-//     导致只改作业内容也会把截止日期悄悄改成编辑当天
+// baseDateStr 为 "YYYY-MM-DD"，是「当天/次日」的基准日 = 该条作业的所属日：
 //   · 新建时传「当前查看的日期」—— 在「明天」新建作业时截止时间才落在明天
+//   · 编辑时传「该条作业自身的所属日」—— 在昨天的条目下选「次日」，
+//     基准是昨天而不是今天，否则改一条历史作业会把死线挪到今天
+// dayOffset：0=当天（缺省），1=次日。周一录「次日 7:30」必须落在周二，
+//   否则墙上显示的是一个已经过去的时刻（故事 19/20）。
 // 解析失败返回 null
-window.parseDeadlineInput = function (text, baseDateStr) {
+window.parseDeadlineInput = function (text, baseDateStr, dayOffset) {
   if (!text) return null;
   var m = text.match(/(\d{1,2})\s*[:：]\s*(\d{1,2})/);
   if (!m) return null;
   var hour = +m[1], min = +m[2];
   if (hour > 23 || min > 59) return null; // 非法时间
-  var base = /^\d{4}-\d{2}-\d{2}$/.test(baseDateStr || '') ? baseDateStr : null;
-  if (!base) {
-    var now = new Date();
-    base = now.getFullYear() + '-' +
-      String(now.getMonth() + 1).padStart(2, '0') + '-' +
-      String(now.getDate()).padStart(2, '0');
-  }
-  return base + ' ' + String(hour).padStart(2, '0') + ':' + String(min).padStart(2, '0') + ':00';
+  var p = /^\d{4}-\d{2}-\d{2}$/.test(baseDateStr || '') ? baseDateStr.split('-') : null;
+  var d = p ? new Date(+p[0], +p[1] - 1, +p[2]) : new Date();
+  if (!p) d.setHours(0, 0, 0, 0);
+  if (dayOffset === 1) d.setDate(d.getDate() + 1); // 跨月/跨年进位交给 Date
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0') + ' ' +
+    String(hour).padStart(2, '0') + ':' + String(min).padStart(2, '0') + ':00';
+};
+
+// 编辑回显用：这条 deadline 相对「所属日」落在哪一档？0=当天，1=次日，null=两档都装不下。
+// 基准必须是这条作业自身的所属日，不能是今天——否则编辑昨天的条目，
+// 「当天」会把死线悄悄挪到今天（这就是 ui 早年修过的那个 bug）。
+window.deadlineDayOffsetOf = function (deadline, ownerDate) {
+  var dlDate = deadline ? String(deadline).slice(0, 10) : '';
+  if (!dlDate || dlDate === ownerDate) return 0;
+  if (dlDate === nextDayStr(ownerDate)) return 1;
+  return null;
 };
 
 // ============ Modal ============
-window.openAddModal = function () {
+// 「当天/次日」段式控件。offset：0=当天，1=次日，null=两个都不亮——
+// 后者只在编辑历史数据时出现（deadline 既不属于所属日也不属于其次日），
+// 不亮就是一种诚实的「这一天我们无法用两档表达」，此时提交会原样保留那一天。
+window.setDeadlineDay = function (offset) {
+  window.AppState.deadlineDayOffset = offset;
+  var seg = document.getElementById('deadlineDaySeg');
+  if (!seg) return;
+  var opts = seg.querySelectorAll('.seg-opt');
+  for (var i = 0; i < opts.length; i++) {
+    var on = String(offset) === opts[i].dataset.offset;
+    opts[i].classList.toggle('active', on);
+    opts[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+};
+
+function enterAddMode() {
   var dom = window.AppDom;
-  window.AppState.editingId = null;
-  window.AppState.editingDeadline = null; // 新建：截止时间以当前查看日期为基准
+  var state = window.AppState;
+  state.editingId = null;
+  state.editingDeadline = null;
+  state.subjectConvertedId = null;
+  state.deadlineOwnerDate = window.formatDate(state.currentDate); // 「当天」= 正在查看的这一天
+  window.setDeadlineDay(0);
   dom.modalTitle.textContent = '添加作业';
   dom.editId.value = '';
-  dom.subjectSelect.value = '';
+}
+
+window.openAddModal = function () {
+  var dom = window.AppDom;
+  enterAddMode();
+  dom.subjectInput.value = '';
   dom.contentInput.value = '';
   var deadlineInput = document.getElementById('deadlineInput');
   if (deadlineInput) deadlineInput.value = '';
@@ -270,11 +298,15 @@ window.openAddModal = function () {
 
 window.openEditModal = function (hw) {
   var dom = window.AppDom;
-  window.AppState.editingId = hw.id;
-  window.AppState.editingDeadline = hw.deadline || null; // 保留原日期，只允许改时间
+  var state = window.AppState;
+  state.editingId = hw.id;
+  state.subjectConvertedId = null; // 从行上点进来的：不欠"换科目要退回新建"这笔账
+  state.editingDeadline = hw.deadline || null; // 保留原日期，只允许改时间
+  state.deadlineOwnerDate = hw.date;
+  window.setDeadlineDay(window.deadlineDayOffsetOf(hw.deadline, hw.date));
   dom.modalTitle.textContent = '编辑作业';
   dom.editId.value = hw.id;
-  dom.subjectSelect.value = hw.subject_id != null ? hw.subject_id : '';
+  dom.subjectInput.value = hw.subject_name || ''; // 回填名字而不是 id：框现在可输入
   dom.contentInput.value = hw.content;
   var deadlineInput = document.getElementById('deadlineInput');
   if (deadlineInput) deadlineInput.value = hw.deadline ? formatDeadlineInput(hw.deadline) : '';
@@ -286,43 +318,205 @@ window.closeModal = function () {
   window.AppDom.modalOverlay.classList.add('hidden');
 };
 
+// ============ 「添加作业」里选到当天已有作业的科目 = 改那一条（ADR-0005 的入口口径） ============
+// 一科一条之后，这个动作不再意味着"造出第二条"，而是"回去改那一条"。判定只读
+// state.homeworks 的现成数据——为它多发一次请求，会把一次输入法提交拆成两跳。
+//
+// 触发点只能挂在 change：实测逐字敲「语文补充练习」时，input 事件里会先出现
+// input="语文" 这个完整匹配。挂在 input 上，想录新科目的人敲到第二个字就被切走。
+
+var _subjectValueAtFocus = ''; // 回到这个框之前是什么样，取消覆盖时就退回什么样
+
+window.snapshotSubjectInput = function () {
+  _subjectValueAtFocus = window.AppDom.subjectInput.value;
+};
+
+window.onSubjectBoxChange = function () {
+  var dom = window.AppDom;
+  var state = window.AppState;
+  var name = dom.subjectInput.value.trim();
+  if (!name) return; // 清空科目框不算"选科目"，交给保存时的必选守卫
+
+  var subj = state.subjects.find(function (s) { return s.name === name; });
+  var hw = subj && state.homeworks.find(function (h) { return h.subject_id === subj.id; });
+
+  if (hw) {
+    if (state.editingId === hw.id) return; // 已经在改这条，不重复问
+    // 从行上点进来的编辑态：这里的科目框是"给这条换科目"的字段，不劫持它的意图。
+    // 真换到当天已有作业的科目会被唯一索引挡成 409，那句文案会说明该去改哪一条。
+    if (state.editingId && state.subjectConvertedId !== state.editingId) return;
+    if (convertToAddModalEdit(hw)) _subjectValueAtFocus = dom.subjectInput.value;
+    return;
+  }
+
+  // 该科当天还没作业，或这个名字是新科目 → 是新建。若刚才被切成了编辑态，
+  // 必须退回来：否则用户改了科目名却把正文 PUT 到上一条被选中的作业上。
+  if (state.subjectConvertedId) enterAddMode();
+};
+
+function convertToAddModalEdit(hw) {
+  var dom = window.AppDom;
+  var typed = dom.contentInput.value.trim();
+  if (typed && !window.confirm('该科今天已有作业，用它的正文替换当前输入？')) {
+    dom.subjectInput.value = _subjectValueAtFocus; // 一个字都不冲，退回上一版
+    return false;
+  }
+  window.openEditModal(hw);
+  // 回填走 openEditModal（它负责 deadline 的「当天/次日」口径），只有标题说出选了哪一科
+  dom.modalTitle.textContent = '编辑〈' + hw.subject_name + '〉';
+  window.AppState.subjectConvertedId = hw.id;
+  return true;
+}
+
+// ============ 科目候选（开放集） ============
+// 科目名不再固定六科：保存作业时敲进来的新名会自动建科，候选框与筛选器
+// 必须跟着重画，否则「刚录的政治，下一条还得重敲」，而且 renderHomeworks
+// 是按 state.subjects 分组的——列表里没有这个科目，这一条就压根上不了墙。
+window.renderSubjectOptions = function () {
+  var dom = window.AppDom;
+  var subjects = window.AppState.subjects || [];
+
+  if (dom.subjectOptions) {
+    dom.subjectOptions.textContent = '';
+    subjects.forEach(function (s) {
+      var opt = document.createElement('option');
+      opt.value = s.name;
+      dom.subjectOptions.appendChild(opt);
+    });
+  }
+
+  if (dom.subjectFilter) {
+    var prev = dom.subjectFilter.value;
+    dom.subjectFilter.textContent = '';
+    var all = document.createElement('option');
+    all.value = '';
+    all.textContent = '全部科目';
+    dom.subjectFilter.appendChild(all);
+    subjects.forEach(function (s) {
+      var opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name;
+      dom.subjectFilter.appendChild(opt);
+    });
+    dom.subjectFilter.value = prev;
+    if (dom.subjectFilter.value !== prev) {
+      // 原先筛中的科目不在了：同步回「全部」，不然筛选器显示的和 AppState 记的不是一个
+      dom.subjectFilter.value = '';
+      window.AppState.filterSubjectId = null;
+    }
+  }
+};
+
+window.refreshSubjects = async function () {
+  try {
+    await window.loadSubjects();
+  } catch (err) {
+    // 拉取失败不值得打断保存：作业已经写进去了，候选少一项下次自然会补上
+    console.warn('[作业墙] 科目列表刷新失败，候选暂不含新科目：', err && err.message);
+    return;
+  }
+  window.renderSubjectOptions();
+};
+
 // ============ Dark Mode ============
 window.toggleDarkMode = function () {
   var isDark = document.body.classList.toggle('dark-mode');
   localStorage.setItem('hw_darkmode', isDark ? '1' : '0');
 };
 
-// ============ View Mode Toggle（编辑/展示） ============
-window.toggleViewMode = function () {
+// ============ View Mode（编辑/展示）单一入口 ============
+// applyViewMode：把 state.viewMode 落到 DOM（class、按钮文案）与运行时（轮询、时钟、全屏）。
+// setViewMode：切换入口，对同一目标模式幂等。
+// 两者分开是因为展示态是默认态（ADR-0003）——init() 需要在「没有发生切换」的情况下
+// 把页面摆成展示态并启动计时器，此时若只调 setViewMode 会被幂等判断直接挡掉。
+window.applyViewMode = function () {
   var state = window.AppState;
   var dom = window.AppDom;
+  var show = state.viewMode === 'show';
 
-  if (state.viewMode === 'edit') {
-    // 切到展示模式（学生只读）
-    state.viewMode = 'show';
-    dom.modeToggle.textContent = '编辑';
-    dom.modeToggle.classList.add('active');
-    document.body.classList.add('view-show');
-    document.body.classList.remove('manage-on');
-    window.closeBatchMode();
-    window.loadHomeworks();
+  dom.modeToggle.textContent = show ? '编辑' : '展示';
+  dom.modeToggle.classList.toggle('active', show);
+  document.body.classList.toggle('view-show', show);
+  document.body.classList.toggle('manage-on', !show);
+
+  if (show) {
+    window.stopEditIdle();
     window.startAutoRefresh();
     window.startClock();
     window.enterFullscreen();
   } else {
-    // 切回编辑模式（科代表录入）
-    state.viewMode = 'edit';
-    dom.modeToggle.textContent = '展示';
-    dom.modeToggle.classList.remove('active');
-    document.body.classList.remove('view-show');
-    document.body.classList.add('manage-on');
     if (state.refreshTimer) {
       clearInterval(state.refreshTimer);
       state.refreshTimer = null;
     }
     window.stopClock();
-    window.loadHomeworks();
     window.exitFullscreen();
+    window.startEditIdle();
+  }
+};
+
+window.setViewMode = function (mode) {
+  var state = window.AppState;
+  if (mode !== 'edit' && mode !== 'show') return;
+  if (state.viewMode === mode) return; // 幂等：重复切同一目标不重放渲染与全屏
+  state.viewMode = mode;
+  window.applyViewMode();
+  window.loadHomeworks();
+};
+
+window.toggleViewMode = function () {
+  window.setViewMode(window.AppState.viewMode === 'edit' ? 'show' : 'edit');
+};
+
+// ============ 编辑态闲置回弹（故事 24/25） ============
+// 封的是反向风险：科代表改完一走了之，全班挂一整天带删除钮的编辑界面。
+// 这条计时器只管「离开编辑态」，展示态下它整个不存在。
+// 句柄必须独立于 5 秒轮询和 1 秒时钟——复用会变成「轮询顺带把编辑态踢回去」
+// 这种最难查的竞态，所以 state 里单独一位 editIdleTimer。
+var EDIT_IDLE_LIMIT = 300; // 5 分钟无活动 → 回展示态
+var EDIT_IDLE_WARN = 240;  // 第 4 分钟起给预告
+var EDIT_IDLE_REPEAT = 15; // toast 只活 2.5 秒，回弹前再提醒几次才算「一条预告」
+var EDIT_IDLE_TICK = 1000;
+
+window.resetEditIdle = function () {
+  var state = window.AppState;
+  if (!state.editIdleTimer) return; // 展示态下本计时器不存在，不替它记账
+  state.editIdleAt = Date.now();
+  state.editIdleWarnedAt = 0;
+};
+
+function isEditIdleFrozen() {
+  // 模态开着就冻结：哪怕人走神五分钟，正在打的一半内容不能被吞掉
+  var overlay = window.AppDom.modalOverlay;
+  return !!overlay && !overlay.classList.contains('hidden');
+}
+
+window.startEditIdle = function () {
+  var state = window.AppState;
+  window.stopEditIdle();
+  state.editIdleAt = Date.now();
+  state.editIdleWarnedAt = 0;
+  state.editIdleTimer = setInterval(function () {
+    if (isEditIdleFrozen()) {
+      state.editIdleAt = Date.now(); // 冻结期间不累计，解冻后从第 0 秒重新数
+      return;
+    }
+    var idle = (Date.now() - state.editIdleAt) / 1000;
+    if (idle >= EDIT_IDLE_LIMIT) {
+      window.stopEditIdle();
+      window.setViewMode('show');
+    } else if (idle >= EDIT_IDLE_WARN && Date.now() - state.editIdleWarnedAt >= EDIT_IDLE_REPEAT * 1000) {
+      state.editIdleWarnedAt = Date.now();
+      window.showToast('即将回到展示，继续编辑请点一下屏幕', 'info');
+    }
+  }, EDIT_IDLE_TICK);
+};
+
+window.stopEditIdle = function () {
+  var state = window.AppState;
+  if (state.editIdleTimer) {
+    clearInterval(state.editIdleTimer);
+    state.editIdleTimer = null;
   }
 };
 
@@ -398,159 +592,83 @@ window.adjustShowScale = function (delta) {
 };
 
 // ============ 展示模式自适应 ============
-// 目标：内容一条不漏（完全性）+ 字号尽量大（后排可视性）。
-// 仅调整 --fit-scale（与用户选择的 --show-scale 相乘），二分搜索出「内容完整显示」的最大字号。
-// 若缩到可读下限仍放不下 → 退化为自然布局 + 纵向滚动（见 .show-overflow）。
-window.fitShowDisplay = function () {
-  if (!document.body.classList.contains('view-show')) return;
-  var root = document.documentElement;
-  var body = document.body;
-  var FLOOR = 0.55; // 下限：再小就不可读
+// 目标不变：内容一条不漏（完全性）+ 后排看得清（字号尽量大）。
+// 降级两档：先压间距与行高（拿密度换空间，字号不动），仍不够才二分缩字号。
+// 压到可读下限还装不下 → 整面墙交给纵向滚动（ADR-0007，推翻 ADR-0004 的后果 2）。
+// 但滚动是**兜底档才挂上的条件几何**，不是默认状态：阶梯唯一的传感器就是 1fr 行轨配
+// overflow:hidden 造出的 scroll>client（工单 018 实测），默认放开等于让阶梯第一档就测到「装得下」。
+var SHOW_COLS = 3;      // 列数固定，行数随科目数走
+var FIT_FLOOR = 0.55;   // 字号下限：再小就不可读
 
-  body.classList.remove('show-overflow'); // 先按「固定网格」评估
+function showGroups() {
+  return Array.prototype.slice.call(
+    document.querySelectorAll('body.view-show .subject-group'));
+}
 
-  function overflows() {
-    var groups = document.querySelectorAll('body.view-show .subject-group');
-    for (var i = 0; i < groups.length; i++) {
-      var g = groups[i];
-      var list = g.querySelector('.hw-list');
-      if (list && list.scrollHeight > list.clientHeight + 1) return true;
-      if (g.scrollHeight > g.clientHeight + 1) return true;
-    }
-    return false;
+function setRows(n) {
+  document.documentElement.style.setProperty('--show-rows', String(Math.max(1, n)));
+}
+
+function setFitScale(s) {
+  document.documentElement.style.setProperty('--fit-scale', String(s));
+}
+
+// 裁切 = 阶梯的眼睛：只看当前几何下有没有哪一格的列表溢出自己的行轨
+function anyGroupOverflows(groups) {
+  for (var i = 0; i < groups.length; i++) {
+    var g = groups[i];
+    var list = g.querySelector('.hw-list');
+    if (list && list.scrollHeight > list.clientHeight + 1) return true;
+    if (g.scrollHeight > g.clientHeight + 1) return true;
   }
-  function setScale(s) { root.style.setProperty('--fit-scale', String(s)); }
+  return false;
+}
 
-  setScale(1);
-  if (!overflows()) return;   // 基准字号即完整显示
+function wallFits(groups) {
+  return !anyGroupOverflows(groups);
+}
 
-  setScale(FLOOR);
-  if (overflows()) {
-    // 可读下限仍放不下：切换滚动兜底，并用回较大字号（滚动下后排仍要看得清）
-    body.classList.add('show-overflow');
-    setScale(1);
-    return;
-  }
-
-  var lo = FLOOR, hi = 1;     // lo=可完整显示, hi=溢出
+// 二分出「整墙都不溢出」的最大 fit-scale；连下限都放不下返回 null
+function bestFitScale(groups) {
+  setFitScale(FIT_FLOOR);
+  if (!wallFits(groups)) return null;
+  setFitScale(1);
+  if (wallFits(groups)) return 1;
+  var lo = FIT_FLOOR, hi = 1;
   for (var k = 0; k < 8; k++) {
     var mid = (lo + hi) / 2;
-    setScale(mid);
-    if (overflows()) hi = mid; else lo = mid;
+    setFitScale(mid);
+    if (wallFits(groups)) lo = mid; else hi = mid;
   }
-  setScale(lo);
-};
+  return lo;
+}
 
-// ============ Manage Mode（管理扩展条） ============
-// 管理扩展条常驻显示（无独立开关按钮），此函数保留供批量模式复位用
-window.toggleManageMode = function () {
-  var dom = window.AppDom;
-  document.body.classList.remove('manage-on');
-};
+window.fitShowDisplay = function () {
+  if (!document.body.classList.contains('view-show')) return;
+  // 每次重算都从「不密、不滚」的几何起步：少了摘兜底类这一步，视口从小变大之后
+  // 墙会永远停在可滚动态——那是替换语义不是等价删除。
+  document.body.classList.remove('show-dense');
+  document.body.classList.remove('show-scroll-fallback');
+  var groups = showGroups();
+  if (!groups.length) { setRows(1); return; }
 
-// ============ Batch Edit Mode ============
-window.openBatchMode = function () {
-  var dom = window.AppDom;
-  var state = window.AppState;
-  state.batchMode = true;
-  state.selectedIds = [];
-  dom.batchBar.classList.remove('hidden');
-  dom.batchNoteInput.value = '';
-  dom.batchSubjectSelect.value = '';
-  dom.batchEditBtn.classList.add('active');
-  window.updateBatchCount();
-  window.renderHomeworks();
-  window.showToast('点击作业多选', 'info');
-};
+  // 先按「列固定 3、行数 = ⌈科目数/3⌉」自然铺开再开始测量：
+  // 8 个科目就该是 3 列 × 3 行，而不是被塞进两行里挤扁
+  setRows(Math.ceil(groups.length / SHOW_COLS));
 
-window.closeBatchMode = function () {
-  var dom = window.AppDom;
-  var state = window.AppState;
-  state.batchMode = false;
-  state.selectedIds = [];
-  dom.batchBar.classList.add('hidden');
-  dom.batchEditBtn.classList.remove('active');
-  window.renderHomeworks();
-};
+  setFitScale(1);
+  if (wallFits(groups)) return;                     // 基准：疏朗间距 + 原字号
 
-window.toggleSelectHomework = function (id) {
-  var state = window.AppState;
-  var idx = state.selectedIds.indexOf(id);
-  if (idx === -1) {
-    state.selectedIds.push(id);
-  } else {
-    state.selectedIds.splice(idx, 1);
-  }
-  window.updateBatchCount();
-  window.renderHomeworks();
-};
+  document.body.classList.add('show-dense');        // 第一档：压间距与行高
+  if (wallFits(groups)) return;
 
-window.updateBatchCount = function () {
-  var dom = window.AppDom;
-  var state = window.AppState;
-  dom.batchCount.textContent = '已选 ' + state.selectedIds.length + ' 条';
-  dom.batchApplyBtn.disabled = state.selectedIds.length === 0;
-};
+  var scale = bestFitScale(groups);                 // 第二档：二分缩字号
+  if (scale !== null) { setFitScale(scale); return; }
 
-window.applyBatchEdit = async function () {
-  var dom = window.AppDom;
-  var state = window.AppState;
-  if (state.selectedIds.length === 0) {
-    window.showToast('请先选择作业', 'error');
-    return;
-  }
-  var data = {};
-  var subjVal = dom.batchSubjectSelect.value;
-  if (subjVal) data.subject_id = parseInt(subjVal);
-  var noteVal = dom.batchNoteInput.value.trim();
-  if (noteVal) data.note = noteVal;
-  if (Object.keys(data).length === 0) {
-    window.showToast('请选择科目或填写备注', 'error');
-    return;
-  }
-  try {
-    await window.batchUpdateHomeworks(state.selectedIds, data);
-    window.showToast('已更新 ' + state.selectedIds.length + ' 条作业', 'success');
-    window.closeBatchMode();
-    window.loadHomeworks();
-  } catch (err) {
-    window.showToast('批量更新失败: ' + err.message, 'error');
-  }
-};
-
-// ============ Batch Import ============
-window.openBatchImport = function () {
-  var dom = window.AppDom;
-  dom.batchInput.value = '';
-  dom.batchModalOverlay.classList.remove('hidden');
-  dom.batchInput.focus();
-};
-window.closeBatchImport = function () {
-  window.AppDom.batchModalOverlay.classList.add('hidden');
-};
-window.parseAndImport = async function () {
-  var dom = window.AppDom;
-  var state = window.AppState;
-  var text = dom.batchInput.value.trim();
-  if (!text) { window.showToast('请输入作业内容', 'error'); return; }
-  var lines = text.split('\n').map(function (l) { return l.trim(); }).filter(function (l) { return l; });
-  var success = 0, errors = [];
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i];
-    var colonIdx = line.indexOf('：'), semiIdx = line.indexOf(':');
-    var effectiveIdx = colonIdx === -1 ? semiIdx : (semiIdx === -1 ? colonIdx : Math.min(colonIdx, semiIdx));
-    if (effectiveIdx === -1) { errors.push('「' + line.slice(0, 20) + '...」缺少科目分隔符'); continue; }
-    var subjectName = line.slice(0, effectiveIdx).trim();
-    var content = line.slice(effectiveIdx + 1).trim();
-    if (!content) { errors.push('「' + subjectName + '」作业内容为空'); continue; }
-    var subj = state.subjects.find(function (s) { return s.name === subjectName; });
-    try {
-      await window.addHomework({ subject_id: subj ? subj.id : null, content: content, date: window.formatDate(state.currentDate), note: '' });
-      success++;
-    } catch (err) { errors.push('「' + subjectName + '」导入失败: ' + err.message); }
-  }
-  window.closeBatchImport();
-  var msg = errors.length === 0 ? '成功导入 ' + success + ' 条作业' : '导入 ' + success + ' 条，' + errors.length + ' 条失败';
-  window.showToast(msg, errors.length ? 'error' : 'success');
-  window.loadHomeworks();
+  // 兜底档：压到可读下限仍装不下，让整面墙可上下滚（ADR-0007）。
+  // 行轨与 overflow:hidden 都不动——它们还在替下一轮测量看住裁切，
+  // 放开的是 .main 那一屏高的钉（工单 018 实测：那一条就是墙级不能滚的唯一作者）。
+  setRows(1);
+  setFitScale(FIT_FLOOR);
+  document.body.classList.add('show-scroll-fallback');
 };

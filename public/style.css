@@ -358,11 +358,6 @@ body.topbar-hidden .main { padding-top: 18px; }
   letter-spacing: 0.08em;
   color: var(--subject-color);
 }
-.subject-count {
-  font-size: 16px;
-  color: var(--ink-faint);
-  letter-spacing: 0.05em;
-}
 
 /* 作业行 */
 .hw-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
@@ -410,7 +405,7 @@ body.topbar-hidden .main { padding-top: 18px; }
 }
 .hw-row .deadline > span { font-size: 0.9em; }
 
-/* 管理模式：行内出现编辑/删除/勾选/拖拽 */
+/* 编辑态（.manage-on）：行内只有删除钮，改作业的手势是点整行 */
 .hw-row .row-actions {
   display: none;
   align-items: center;
@@ -418,6 +413,8 @@ body.topbar-hidden .main { padding-top: 18px; }
   flex: none;
 }
 body.manage-on .hw-row .row-actions { display: flex; }
+/* 整行即入口，光标得先说出来；掐掉连点两行时的选字残留 */
+body.manage-on .hw-row { cursor: pointer; user-select: none; }
 
 .row-action-btn {
   background: none;
@@ -435,48 +432,6 @@ body.manage-on .hw-row .row-actions { display: flex; }
 .row-action-btn svg { width: 17px; height: 17px; }
 .row-action-btn:hover { border-color: var(--ink); color: var(--ink); background: rgba(0,0,0,0.04); }
 .row-action-btn.del:hover { border-color: var(--c-yu); color: var(--c-yu); }
-.row-action-btn.done:hover { border-color: var(--accent); color: var(--accent); }
-
-.hw-row .drag-handle {
-  display: none;
-  color: var(--ink-faint);
-  padding: 6px;
-  cursor: grab;
-  user-select: none;
-}
-.hw-row .drag-handle svg { width: 20px; height: 20px; }
-body.manage-on .hw-row .drag-handle { display: flex; align-items: center; }
-
-/* 多选模式 */
-.hw-row.selectable { cursor: pointer; }
-.hw-row.selectable .row-actions,
-.hw-row.selectable .drag-handle { display: none; }
-
-.hw-row .checkbox {
-  display: none;
-  width: 22px;
-  height: 22px;
-  border: 2px solid var(--ink-faint);
-  border-radius: 6px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  transition: all var(--dur-fast) var(--ease-out);
-}
-.hw-row .checkbox svg { width: 13px; height: 13px; stroke-width: 3.5; }
-body.manage-on .hw-row.selectable .checkbox { display: flex; }
-.hw-row.selected .checkbox {
-  background: var(--ink);
-  border-color: var(--ink);
-}
-.hw-row.selected { box-shadow: inset 3px 0 0 var(--ink); }
-
-/* 拖拽状态 */
-.hw-row.dragging { opacity: 0.3; }
-.subject-groups.drag-over .hw-row.drag-target {
-  box-shadow: inset 0 3px 0 var(--ink);
-}
 
 /* 空状态 */
 .empty-line {
@@ -486,60 +441,6 @@ body.manage-on .hw-row.selectable .checkbox { display: flex; }
   font-size: 17px;
   letter-spacing: 0.15em;
 }
-
-/* ============================================================
-   批量编辑栏
-   ============================================================ */
-.batch-bar {
-  position: sticky;
-  bottom: 16px;
-  z-index: 200;
-  max-width: 940px;
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  background: var(--ink);
-  color: #fff;
-  border-radius: 16px;
-  padding: 12px 20px;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.25);
-}
-.batch-bar.hidden { display: none; }
-.batch-bar .batch-count {
-  font-size: 14px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.batch-bar select,
-.batch-bar input {
-  font-family: inherit;
-  font-size: 13px;
-  padding: 8px 12px;
-  border: none;
-  border-radius: 8px;
-  background: rgba(255,255,255,0.15);
-  color: #fff;
-}
-.batch-bar select { max-width: 160px; }
-.batch-bar input { width: 200px; }
-.batch-bar select option { color: #111; background: #fff; }
-.batch-bar select:focus,
-.batch-bar input:focus { outline: 2px solid #fff; }
-.batch-bar .btn-cancel,
-.batch-bar .btn-submit {
-  font-family: inherit;
-  font-size: 13px;
-  padding: 8px 18px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
-}
-.batch-bar .btn-cancel { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.4); }
-.batch-bar .btn-submit { background: #fff; color: #111; }
-.batch-bar .btn-submit:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ============================================================
    模态框
@@ -562,9 +463,14 @@ body.manage-on .hw-row.selectable .checkbox { display: flex; }
   border-radius: 16px;
   width: 100%;
   max-width: 560px;
+  /* 软键盘弹起会压矮动态视口：模态跟着变矮，而不是把「保存」顶出屏幕 */
+  max-height: calc(100dvh - 80px);
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 20px 60px rgba(0,0,0,0.2);
 }
 .modal-header {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -585,7 +491,19 @@ body.manage-on .hw-row.selectable .checkbox { display: flex; }
 .modal-close svg { width: 20px; height: 20px; }
 .modal-close:hover { color: var(--ink); }
 
-#homeworkForm { padding: var(--space-lg); }
+#homeworkForm {
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+/* 模态里唯一的滚动区：字段多/视口矮时滚这里，「取消/保存」不跟着滚走 */
+.form-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
 .form-group { margin-bottom: var(--space-md); }
 .form-group label {
   display: block;
@@ -615,7 +533,34 @@ body.manage-on .hw-row.selectable .checkbox { display: flex; }
   border-color: var(--ink);
 }
 .form-group textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
+
+/* 截止时间：段式二选（当天/次日）+ 时刻框并排。
+   触控下用大号段钮而不是下拉——两档选择没必要再多一次弹层。 */
+.deadline-row { display: flex; align-items: stretch; gap: 10px; }
+.deadline-row input { flex: 1 1 auto; min-width: 0; }
+.seg {
+  flex: none;
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.seg-opt {
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-dim);
+  background: none;
+  border: none;
+  padding: 0 16px;
+  min-height: 46px;
+  cursor: pointer;
+}
+.seg-opt + .seg-opt { border-left: 1px solid var(--line); }
+.seg-opt.active { background: var(--ink); color: var(--surface); }
 .form-actions {
+  flex: none;
   display: flex;
   gap: var(--space-sm);
   justify-content: flex-end;
@@ -694,14 +639,7 @@ body.dark-mode .btn-submit:hover { background: #444; }
 body.dark-mode .mode-toggle:hover { background: var(--ink); color: #141414; }
 body.dark-mode .mode-toggle.active { background: var(--ink); color: #141414; }
 body.dark-mode .today-btn:hover { border-color: var(--ink); color: var(--ink); }
-body.dark-mode .hw-row.selected { box-shadow: inset 3px 0 0 var(--ink); }
 body.dark-mode .subject-filter option { background: var(--surface); }
-body.dark-mode .batch-bar { background: #f0f0f0; color: #141414; }
-body.dark-mode .batch-bar select,
-body.dark-mode .batch-bar input { background: #e0e0e0; color: #141414; }
-body.dark-mode .batch-bar select option { background: #fff; color: #111; }
-body.dark-mode .batch-bar .btn-submit { background: #141414; color: #fff; }
-body.dark-mode .batch-bar .btn-cancel { border-color: rgba(0,0,0,0.3); color: #141414; }
 body.dark-mode .toast { background: #f0f0f0; color: #141414; }
 body.dark-mode .toast.success { background: #2d9e52; color: #fff; }
 body.dark-mode .toast.error { background: #ff6b5e; color: #141414; }
@@ -719,14 +657,15 @@ body.dark-mode .toast.error { background: #ff6b5e; color: #141414; }
   .manage-bar { padding: 12px 16px 14px; }
   .hw-row { gap: 12px; }
   .date-nav { order: 3; }
-  .batch-bar { left: 12px; right: 12px; }
-  .batch-bar input { width: 150px; }
   .modal-overlay { padding: 16px; }
 }
 
 /* 触屏设备 */
 @media (hover: none) {
   .row-action-btn { width: 40px; height: 40px; }
+  /* 模态的三个出口都得是手指能稳定命中的尺寸 */
+  .modal-close { width: 48px; height: 48px; }
+  .btn-cancel, .btn-submit { min-height: 48px; padding: 14px 28px; }
 }
 
 /* ============================================================
@@ -736,15 +675,24 @@ body.dark-mode .toast.error { background: #ff6b5e; color: #141414; }
 body.view-show .topbar { display: none; }
 body.view-show .expand-bar { display: none; }
 body.view-show .manage-bar { display: none; }
-body.view-show .batch-bar { display: none; }
 
-/* 展示模式时钟（右上角：当前系统时间，精确到分） */
-.show-clock {
+/* 展示态右上角簇（时钟 + 退出展示）
+   position:fixed 不参与布局，因此不会干扰 fitShowDisplay 的字号测量。 */
+.show-hud {
   position: fixed;
   top: 20px;
   right: 24px;
-  z-index: 940;
+  z-index: 960;
   display: none;
+  align-items: center;
+  gap: 12px;
+}
+body.view-show .show-hud { display: flex; }
+
+/* 展示模式时钟（精确到分） */
+.show-clock {
+  display: flex;
+  flex: none;
   align-items: center;
   background: rgba(255, 255, 255, 0.85);
   border: 1px solid var(--line);
@@ -759,7 +707,6 @@ body.view-show .batch-bar { display: none; }
   /* 始终高亮显示（不做 hover 显影），保证后排也能看清当前时间 */
   opacity: 1;
 }
-body.view-show .show-clock { display: flex; }
 body.dark-mode .show-clock { background: rgba(40, 40, 40, 0.85); }
 
 /* 离线角标（左下角）
@@ -844,26 +791,53 @@ body.view-show .show-ctrl.hidden { display: flex; }
   font-weight: 600;
 }
 
-/* 展示模式退出按钮：仅展示模式可见，右下角半透明小圆钮（低干扰） */
+/* 展示态出口：带文字的高对比胶囊。
+   旧版是右下角一颗 0.25 透明度、只在 :hover 才显影的铅笔图标——
+   触控一体机上既没有 hover、也没有 tooltip，等于没有出口。 */
 .exit-show-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--ink);
-  border: none;
-  color: #fff;
-  cursor: pointer;
-  display: none;
+  display: flex;
+  flex: none;
+  white-space: nowrap; /* 四字出口不许被挤成竖排 */
   align-items: center;
   justify-content: center;
-  opacity: 0.25;
+  min-height: 48px; /* 一体机触控目标，手指即鼠标 */
+  padding: 0 24px;
+  border: none;
+  border-radius: 30px;
+  background: var(--ink);
+  color: #fff;
+  font-family: inherit;
+  font-size: clamp(16px, 1.4vw, 24px);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  opacity: 1; /* 出口不做半透明，也不靠 hover 显影 */
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
 }
-.exit-show-btn svg { width: 17px; height: 17px; }
-.exit-show-btn:hover { opacity: 0.9; transform: scale(1.1); }
-body.view-show .exit-show-btn { display: flex; }
+.exit-show-btn:active { transform: scale(0.97); }
+body.dark-mode .exit-show-btn { color: #141414; }
 body.view-show .show-font { display: flex; }
+
+/* 投影降级的第一档就是这些间距/行高：装不下时先由 fitShowDisplay 挂上
+   .show-dense 把它们压小，字号尽量不动（后排可读性优先于疏朗）。
+   集中成变量是为了让「压缩了什么」一眼可见，不散落在各条规则里。 */
+body.view-show {
+  --show-gap-v: 32px;
+  --show-gap-h: 56px;
+  --show-row-pad: 12px;
+  --show-head-gap: 16px;
+  --show-deadline-gap: 20px;
+  --show-line-h: 1.35;
+}
+body.view-show.show-dense {
+  --show-gap-v: 12px;
+  --show-gap-h: 26px;
+  --show-row-pad: 4px;
+  --show-head-gap: 6px;
+  --show-deadline-gap: 4px;
+  --show-line-h: 1.12;
+}
+
 body.view-show .main {
   padding: 40px 48px;
   height: 100vh;
@@ -875,10 +849,12 @@ body.view-show .main {
 body.view-show .subject-groups {
   /* minmax(0,1fr)：列/行可收缩到内容最小尺寸以下，长内容不再撑破视口 */
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+  /* 列数固定 3，行数随科目数走（--show-rows 由 fitShowDisplay 按 ⌈科目数/3⌉ 写在 :root 上）。
+     写死 2 行时 8 个科目会被挤扁，而不是自然铺成 3 行。 */
+  grid-template-rows: repeat(var(--show-rows, 2), minmax(0, 1fr));
   grid-auto-rows: minmax(0, 1fr);
   height: 100%;
-  gap: 32px 56px;
+  gap: var(--show-gap-v) var(--show-gap-h);
   align-items: stretch;
 }
 body.view-show .subject-group {
@@ -893,38 +869,32 @@ body.view-show .hw-list {
   justify-content: safe center;
   overflow: hidden;
 }
-/* ============================================================
-   展示模式·溢出兜底
-   字号缩到可读下限仍放不下（如某科目作业极多）时启用：
-   改为自然高度布局 + 允许纵向滚动，保证内容一条不漏。
-   完全性优先于「白板无滚动」——宁可滚动也不静默裁切。
-   ============================================================ */
-body.view-show.show-overflow .main {
-  height: auto;
-  min-height: 100vh;
-  overflow-y: auto;
-  justify-content: flex-start;
+body.view-show .subject-head { padding-bottom: 6px; margin-bottom: var(--show-head-gap); }
+body.view-show .hw-row { padding: var(--show-row-pad) 0; }
+
+/* 整日为空时这一句是放给全班看的，编辑态的 17px 灰字后排读不到。
+   展示态的 .subject-groups 是网格，不跨栏的话文案只会落在第一格里。
+   颜色用 --ink-dim（暗色下 #a0a0a0），--ink-faint 在两种主题下都不够对比度。 */
+body.view-show .empty-line {
+  grid-column: 1 / -1;
+  align-self: center;
+  padding: 0;
+  font-size: clamp(34px, 3.2vw + 1.4vh, 84px);
+  letter-spacing: 0.18em;
+  color: var(--ink-dim);
 }
-body.view-show.show-overflow .subject-groups {
-  grid-template-rows: none;
-  grid-auto-rows: auto;
-  height: auto;
-}
-body.view-show.show-overflow .subject-group {
-  height: auto;
-  overflow: visible;
-}
-body.view-show.show-overflow .hw-list {
-  overflow: visible;
-  justify-content: flex-start;
-}
+
 body.view-show .hw-empty {
   list-style: none;
   display: flex;
   align-items: center;
   gap: 24px;
-  padding: 32px 0;
-  font-size: 36px;
+  /* 字号与内边距都跟着阶梯的两档走。空格子是墙上信息量最低的一块，若它免疫于
+     dense 与 fit-scale，九格「未布置」就能把整面墙顶进滚动兜底
+     （工单 025 实测：固定 118px vs 同排正文行 42px，阶梯见底也吸收不掉）。
+     默认档下仍是 36px——工单 024 量过的后排读数不变。 */
+  padding: var(--show-row-pad) 0;
+  font-size: calc(36px * var(--show-scale, 1) * var(--fit-scale, 1));
   letter-spacing: 0.12em;
   border-bottom: none;
 }
@@ -944,22 +914,20 @@ body.view-show .hw-empty .empty-text {
 body.view-show .subject-head {
   border-bottom: 2px solid var(--subject-color, var(--ink));
 }
-body.view-show .hw-row .row-actions,
-body.view-show .hw-row .drag-handle,
-body.view-show .hw-row .checkbox { display: none !important; }
+body.view-show .hw-row .row-actions { display: none !important; }
 body.view-show .hw-row {
   cursor: default;
 }
 body.view-show .hw-row .content {
   /* 基础字号随视口放大（后排可读）；--fit-scale 由 JS 依据实际内容量收缩，保证不裁切 */
   font-size: calc(clamp(32px, 3.4vw + 1.2vh, 92px) * var(--show-scale, 1) * var(--fit-scale, 1));
-  line-height: 1.35;
+  line-height: var(--show-line-h);
   word-break: normal;
   overflow-wrap: break-word;
 }
 body.view-show .hw-row .deadline {
   font-size: calc(38px * var(--show-scale, 1) * var(--fit-scale, 1));
-  margin-top: 20px;
+  margin-top: var(--show-deadline-gap);
   color: var(--ink);
   font-weight: 700;
 }
@@ -971,13 +939,23 @@ body.view-show .hw-row .deadline svg {
 body.view-show .subject-name {
   font-size: calc(clamp(38px, 3vw + 1vh, 76px) * var(--show-scale, 1) * var(--fit-scale, 1));
 }
-body.view-show .subject-count { display: none; }
 
-/* 展示模式：无滚动，隐藏滚动条 */
+/* 展示模式默认不滚动：压间距、缩字号两档阶梯负责把内容收进一屏。
+   滚动只在阶梯见底后出现（见下方 show-scroll-fallback）——默认就放开等于把阶梯的眼睛
+   挖掉：它靠的正是 1fr 行轨 + overflow:hidden 造出的 scroll>client，
+   工单 018 实测默认几何下连基线六格都溢出 491px(1366×768) / 575px(1920×1080)。 */
 body.view-show { overflow: hidden; }
 body.view-show ::-webkit-scrollbar { display: none; }
 
-/* 希沃一体机触屏优化：展示模式无滚动，一屏铺满 */
+/* 兜底档（ADR-0007）：压到字号下限仍装不下，整面墙交给纵向滚动。
+   只放开 .main 那一屏高的钉——工单 018 逐步放开实测：单独放开 body 的 overflow、
+   再连 .main 的 overflow 一起放开，可滚空间都还是 0px；把 height 换成 auto 才出现
+   644px / 902px。行轨的 minmax(0,1fr) 与格子上的 overflow:hidden 一律不动。
+   代价照 ADR-0007 认：同一行轨里最长那格会把同排另两格一起撑高，出现大片空白。 */
+body.view-show.show-scroll-fallback { overflow: visible; }
+body.view-show.show-scroll-fallback .main { height: auto; min-height: 100vh; }
+
+/* 希沃一体机触屏优化：展示模式一屏铺满（兜底档下 .main 自行展开，padding 不变） */
 @media (min-width: 1600px) {
   body.view-show .main { padding: 56px 72px; }
 }
