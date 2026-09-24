@@ -1,0 +1,49 @@
+{
+ "@generated": "由 .scratch/四主题体系/primer-provenance.mjs 生成后手工补过 files_detail / note（脚本只写 registry 段），改这里请同时改脚本 〔003 期补〕本目录这份是提交进 git 的副本，多出的 committed_here 一行是手工写的（生成器不写它）；三份 css 本体仍是上游原样，sha256 由 test/token-provenance.test.js 逐份验。",
+ "package": "@primer/primitives",
+ "version": "11.10.0",
+ "license": "MIT",
+ "repository": "git+https://github.com/primer/primitives.git",
+ "tarball": "https://registry.npmjs.org/@primer/primitives/-/primitives-11.10.0.tgz",
+ "shasum": "affc83ae02229e05dbc599d9903643f3b08dc3bd",
+ "integrity": "sha512-ihZxIst4Izry284StKFjpbYvX6R/IBFTLu+qiuAmR93PsKF2hdjoabhSYwKI8iCxOUx94jVP55bI3NoY7STjYQ==",
+ "unpackedSize": 57536336,
+ "files_kept": [
+  "light.css",
+  "dark.css",
+  "dark-dimmed.css",
+  "radius.css"
+ ],
+ "files_from": "dist/css/functional/themes/",
+ "committed_here": "本目录是 .scratch 那份的子集：只提交门禁 test/token-provenance.test.js 要读的 light.css / dark.css / radius.css。files_detail 里的 dark-dimmed.css 没有随行——ADR-0012 决定 4 刻意不采纳第三套暗色，它的 sha256 留在这里只为说明“我们看过并排除了”。",
+ "files_detail": [
+  {
+   "file": "light.css",
+   "from": "dist/css/functional/themes/light.css",
+   "sha256": "86468bdfa1761f189d7bed7c1a13c6183f67ec132d689dacc63acc9eec986496",
+   "used_for": "--bgColor-default / --bgColor-muted / --bgColor-inset 等语义底色，以及 accent 配对（brand-fixture.mjs 展开 var() 链）"
+  },
+  {
+   "file": "dark.css",
+   "from": "dist/css/functional/themes/dark.css",
+   "sha256": "d70cf0d4f3b2b1056030b40fcf1cd65b1d74d07dbbec002ad300e08266188d89",
+   "used_for": "同上（暗档）。canvas.subtle 在此版本实为 #151b23，非旧记忆的 #161b22"
+  },
+  {
+   "file": "dark-dimmed.css",
+   "from": "dist/css/functional/themes/dark-dimmed.css",
+   "sha256": "12bd3428ae05692c6e4cf45f81a9097d6e6d65fc9ede1106bcb9de18a333b2f5",
+   "used_for": "对照用。GitHub 官方第三套暗色，本方案刻意不采纳（ADR-0012 决定 4 回写）"
+  },
+  {
+   "file": "radius.css",
+   "from": "dist/css/functional/size/radius.css",
+   "sha256": "b0b77f22244ebff700ae01032abc16378bf19f713a7e56a880655f967d00e860",
+   "verified": "2026-09-25 与 https://cdn.jsdelivr.net/npm/@primer/primitives@11.10.0/dist/css/functional/size/radius.css 逐字节相等（713 字节 / sha256 同值）",
+   "used_for": "GitHub 档圆角阶梯 --r-*：--borderRadius-small .1875rem / medium .375rem / large .75rem / full 624.9375rem，按 16px 根字号换算成 px 后写进主题块"
+  }
+ ],
+ "fetched_at": "2026-09-24T16:31:12.043Z",
+ "note": "GitHub 主题的目标底色取自这三份主题文件里的语义 token（--bgColor-default / --bgColor-muted / --bgColor-inset），由 targets-from-primer.mjs 解析后交给矩阵脚本，不手敲；圆角另取 size/radius.css。同目录下的 brand-github.css **不是**上游文件，是 brand-fixture.mjs 由本目录生成物展开出的配对夹具，头部注释已写明。",
+ "why_version_stamp": "ADR-0012 决定 6 的〔001 回写〕：同一个 token 名在两个版本里是两个值（暗档链接蓝旧版 #58a6ff、本版 #4493f8）。「照抄官方」没有包名+版本+token 名就不可复核，所以每份留档文件都必须带 sha256。"
+}

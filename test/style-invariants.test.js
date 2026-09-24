@@ -78,7 +78,7 @@ const blockAt = sel => SRC.indexOf(sel + ' {');
 
 // token 块 = 只写变量定义的块。§7(a)-2 靠它豁免，§7(a)-7 靠它认主题。
 // 每加一档就要在这里在册一次——反过来，漏在册的块会被 :7(a)-7a 那条反向断言当场判红。
-const TOKEN_BLOCKS = new Set([':root', 'body.dark-mode', 'body.theme-github']);
+const TOKEN_BLOCKS = new Set([':root', 'body.dark-mode', 'body.theme-github', 'body.theme-github.dark-mode']);
 
 // 外观族名单（"成套完整声明"的范围，spec §2 与 ADR-0012 决定 3 指的是同一份）。
 // 刻意不含 --sp-*（跨主题唯一）与 --show-*（承重层，只许改名不许改值）。
@@ -101,7 +101,10 @@ const THEME_BLOCKS = [...TOKEN_BLOCKS].filter(s => /^body\.theme-/.test(s));
 
 test('解析器本身可信：认不出这几条已知选择器就说明解析坏了', () => {
   // 'body.theme-github' 是主题化的探针：解析器读不到新块，003-005 的所有读数都是瞎的。
-  for (const need of [':root', 'body.dark-mode', 'body.theme-github', '.add-btn', '.exit-show-btn', '@font-face']) {
+  // 带 .dark-mode 的那一条读的是**复合选择器**——解析器只测过单类名的块，
+  // 而 004/005 的玻璃两档全靠这一层，读不到它就会把"块不存在"当成"值不达标"报出去。
+  for (const need of [':root', 'body.dark-mode', 'body.theme-github', 'body.theme-github.dark-mode',
+    '.add-btn', '.exit-show-btn', '@font-face']) {
     assert.ok(blockOf(need), `解析器没找到 ${need}`);
   }
 });
@@ -269,6 +272,22 @@ test('§7(a)-5c 主题档整块逐字钉死：官方值不漂移，科目色不�
       '--c-s10': '#1484a3', '--c-s11': '#6b18bf', '--c-s12': '#b618bf',
       '--r-sm': '3px', '--r-md': '6px', '--r-lg': '12px', '--r-pill': '6px', '--r-full': '50%',
     },
+    // 暗档与亮档同族不同梯：底色/文字/边框走 --bgColor-* 与 --fgColor-* 的暗档值，
+    // 动作与语义却走 **foreground** 梯而不是 emphasis 梯（理由与读数记在 style.css 那块的头注释、
+    // 底账 §4 的 Class C 表，以及 ADR-0012 决定 6 的〔003 回写〕）。
+    // 六色与 body.dark-mode 逐字相同 = spec 故事 7 的"复用不重算"，这张表就是它的判据。
+    'body.theme-github.dark-mode': {
+      '--bg': '#0d1117', '--surface': '#151b23',
+      '--ink': '#f0f6fc', '--ink-dim': '#9198a1', '--ink-faint': '#656c76', '--line': '#3d444d',
+      '--accent': '#388bfd', '--accent-strong': '#4493f8',
+      '--on-accent': '#0d1117', '--on-ink': '#0d1117',
+      '--success': '#3fb950', '--danger': '#f85149', '--warn': '#d29922',
+      '--c-s1': '#ff7a6e', '--c-s2': '#7fb0ff', '--c-s3': '#ff8fc8',
+      '--c-s4': '#3fd6c2', '--c-s5': '#ffab5c', '--c-s6': '#7fdc78',
+      '--c-s7': '#ffe699', '--c-s8': '#ccff99', '--c-s9': '#99ffc3',
+      '--c-s10': '#99e9ff', '--c-s11': '#cc99ff', '--c-s12': '#fa99ff',
+      '--r-sm': '3px', '--r-md': '6px', '--r-lg': '12px', '--r-pill': '6px', '--r-full': '50%',
+    },
   };
   for (const [sel, props] of Object.entries(PINNED)) {
     const rule = blockOf(sel);
@@ -370,6 +389,68 @@ test('§7(a)-7f 主题入口是一颗按钮，选项在默认收起的弹层里'
   const hide = blockOf('.theme-pop.hidden');
   assert.ok(hide && declOf(hide, 'display') && declOf(hide, 'display').value === 'none',
     '本站没有全局 .hidden——.theme-pop.hidden { display: none } 少了这条，弹层收起不了');
+});
+
+/* ---------- §7(a)-8 --bg 窗口（spec 2026-09-25 故事 8 钉在门禁上的那条实算） ---------- */
+
+// 与 .scratch/contrast_matrix_theme_audit.mjs 同一套 WCAG 2.x 数学。抄一份而不是 import：
+// .scratch 被 gitignore，门禁依赖它等于写一条 clone 之后必红的断言。
+// 抄来的数学必须自证——公式敲错一位不会让窗口表变严，只会让它恒绿。
+const lin = (v) => (v / 255 <= 0.04045 ? (v / 255) / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4);
+const lumOf = (hex) => {
+  const h = hex.slice(1);
+  return 0.2126 * lin(parseInt(h.slice(0, 2), 16)) + 0.7152 * lin(parseInt(h.slice(2, 4), 16)) + 0.0722 * lin(parseInt(h.slice(4, 6), 16));
+};
+const ratioOf = (a, b) => {
+  const x = lumOf(a), y = lumOf(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+};
+
+test('§7(a)-8a 门禁里的对比度数学自证：四个已知读数对得上', () => {
+  // 前三对来自矩阵脚本的 --selftest（那里跑绿过），不是本轮现算的——
+  // 现算的期望值会把抄错的公式一起洗白。
+  // 第四对是**专门挑来走线性段的**：`#010409` 的三个通道 1/4/9 全在阈值那一侧（0.04045×255≈10.3，
+  // 即 v ≤ 10 走 `/12.92`），`#ff7a6e` 的 255/122/110 走幂函数那一侧。
+  // 前三对里 `#000000` 名义上也落线性段，但 0 怎么算都是 0——把除数 12.92 改成别的数它不响。
+  // 于是线性段这条分支在只有前三对时等于没被守着。
+  // 出处：底账 §2 那行"暗档六色在 #010409 上 8.08~12.14"的最小值（实算复核：8.08 是 --c-s1，最大 12.14 是 --c-s6）。
+  for (const [fg, bg, want] of [['#000000', '#ffffff', 21.00], ['#767676', '#ffffff', 4.54],
+    ['#263cba', '#ffffff', 8.61], ['#ff7a6e', '#010409', 8.08]]) {
+    const got = ratioOf(fg, bg);
+    assert.ok(Math.abs(got - want) <= 0.02, `${fg} on ${bg} 这里读到 ${got.toFixed(2)}，矩阵脚本给 ${want}——两份数学分叉了`);
+  }
+});
+
+test('§7(a)-8b 每一块的 --bg 相对自己那组六色最坏读数 ≥4:1', () => {
+  // 判据出处：spec 故事 8「任一 body.theme-* 块的 --bg 相对该块自己那组的六色最坏读数 ≥4:1，由门禁钉住」。
+  // 白板那两块（:root / body.dark-mode）一并纳进来：故事 8 只点名主题块，但这条断言管的是
+  // "有人把页底改暗一档"，这个错误对默认档同样成立，而默认档现在最坏 4.38、暗档 7.25，本来就过。
+  // 地板取 4:1 不是 4.5：白板 s6 在白底只有 4.38，写 4.5 会把上一轮锁死的承重值当场判红，
+  // 那是要单独裁决的改动，不是这条断言顺手能带进来的。后排能不能认出来归 008 人工裁。
+  const FLOOR = 4.0;
+  const SIX = ['--c-s1', '--c-s2', '--c-s3', '--c-s4', '--c-s5', '--c-s6'];
+  const HEX6 = /^#[0-9a-fA-F]{6}$/;
+  for (const sel of [':root', 'body.dark-mode', ...THEME_BLOCKS]) {
+    const rule = blockOf(sel);
+    assert.ok(rule, `找不到 ${sel} 块`);
+    const bg = declOf(rule, '--bg');
+    assert.ok(bg, `${sel} 里没有 --bg，窗口无从算起`);
+    // 不静默跳过：读不出来就是判红。透明底算不出确定读数（Class B 死锁），
+    // 而故事 9 正要求科目色所落的底是实底——这里跳过等于把那条要求丢掉。
+    assert.ok(HEX6.test(bg.value), `${sel} 的 --bg 不是六位实色 hex（读到 ${bg.value}）：窗口断言要的是实底`);
+    const rows = [];
+    const out = [];
+    for (const p of SIX) {
+      const d = declOf(rule, p);
+      assert.ok(d, `${sel} 里 ${p} 不见了`);
+      assert.ok(HEX6.test(d.value), `${sel} 的 ${p} 不是六位实色 hex（读到 ${d.value}）`);
+      const r = ratioOf(d.value, bg.value);
+      rows.push(`${p} ${d.value}→${r.toFixed(2)}`);
+      if (r < FLOOR) out.push(`${p} ${d.value} 只有 ${r.toFixed(2)}`);
+    }
+    assert.deepEqual(out, [],
+      `${sel} 的 --bg=${bg.value} 不在窗内：${out.join('、')}。六格读数 ${rows.join('  ')}`);
+  }
 });
 
 /* ---------- §7(a)-6 命中区不低于 44px（源码侧闸门） ---------- */

@@ -69,7 +69,7 @@ homework-tracker/
 ├── db.js                 # SQLite 数据库封装（better-sqlite3）
 ├── public/               # 前端静态文件
 │   ├── index.html        # 页面结构
-│   ├── style.css         # 样式（token 驱动：间距/圆角/颜色/字体链全部收在 :root 与 body.dark-mode）
+│   ├── style.css         # 样式（token 驱动：间距/圆角/颜色/字体链全部收在 token 块里——`:root`、`body.dark-mode`、每套主题的 `body.theme-*`（明/暗各一块））
 │   ├── fonts/            # 拉丁语境字体（IBM Plex Sans 600 子集，SIL OFL 1.1，离线可用）
 │   └── js/               # 前端模块（按职责拆分）
 │       ├── state.js      # 全局状态 + 日期工具函数

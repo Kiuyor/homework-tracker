@@ -821,6 +821,80 @@ body.theme-github .topbar { background: var(--bg); }
 body.theme-github .modal { background: var(--surface); }
 
 /* ============================================================
+   主题：GitHub · 暗档
+   ============================================================
+   取值出处：@primer/primitives@11.10.0，dist/css/functional/themes/dark.css
+   （原样落盘，sha256 见同目录 PROVENANCE.json）。行尾标官方 token 名，与亮档那块同一套写法。
+   底色/文字/边框逐值照抄，六色与 body.dark-mode 逐字相同（spec 故事 7「复用不重算」）：
+   这块的 --bg 窗口是 7.44~11.18，--surface 上是 6.81~10.23（底账 §2 暗档那两行，门禁 §7(a)-8b 钉住）。
+
+   动作色与语义色走 foreground 梯，不走 emphasis 梯——本档唯一一处需要留下理由的取舍。
+   本站每族只有两个槽：一个填充底，一个"压在底上的字"（--on-accent / --on-ink）。
+   暗档的 --on-ink 必须是深色，因为 .toast 的底就是 --ink=#f0f6fc；而 --accent 除了作填充，
+   还在 .btn-cancel:hover / .row-action-btn:hover 里直接当文字色，--danger 还在删除钮上当图标色。
+   把官方 emphasis 梯摆进这两个角色，四格实测全部落在 4.5 以下：
+     作文字/图标（对 --bg / 对 --surface）#1f6feb 4.08/3.74 · #238636 4.09/3.74 ·
+       #da3633 4.11/3.76 · #9e6a03 4.07/3.72
+     作填充底、上面压深色字               4.08 / 4.09 / 4.11 / 4.07
+   它配白字是过的（4.61~4.65），可本档没有白字那个槽；而 hover 档官方只剩更深的 #0d419d，
+   压到页底上只剩 2.04——控件在 hover 时几乎化进背景，与 body.dark-mode 那条「暗色里加深＝变远」相反。
+   foreground 梯两头都在窗内：作文字/图标 对 --bg 5.65~7.50、对 --surface 5.16~6.86；
+   作填充底、上面压深色字（--on-accent/--on-ink=#0d1117）5.65~7.50。
+   且 --accent-strong=#4493f8 比 --accent=#388bfd 更亮，hover 方向与白板暗档一致。
+   白板暗档早就做过同一种取舍（#99a8ff / #ff6b5e / #ffab5c 全是提亮档配深色字），
+   本块只是按 GitHub 的官方梯把同一个决定重做一遍——没有一个 hex 是为了凑数改的，
+   每个值都能在那份 dark.css 里按 token 名找到（ADR-0012 决定 6 逐字照抄仍然成立）。
+   代价写在这里：本档的按钮蓝不是 GitHub 的 emphasis 蓝，而是它的 outline/link 蓝，
+   观感归工单 007 的浏览器读数由人裁一次。
+
+   --ink-faint=#656c76 对 --bg 只有 3.57：这一族**四档全不达标**（白板亮 1.98 / 白板暗 2.67 /
+   GitHub 亮 3.45 / GitHub 暗 3.57，各对着本块自己的 --bg 实算），是同一处待裁项而不是本档新引入的洞。
+   官方 token 名 --fgColor-disabled，GitHub 自己只把它用在禁用态。不在这里偷偷换成达标的假值。 */
+body.theme-github.dark-mode {
+  --bg: #0d1117;            /* --bgColor-default */
+  --surface: #151b23;       /* --bgColor-muted */
+  --ink: #f0f6fc;           /* --fgColor-default */
+  --ink-dim: #9198a1;       /* --fgColor-muted */
+  --ink-faint: #656c76;     /* --fgColor-disabled */
+  --line: #3d444d;          /* --borderColor-default */
+
+  /* foreground 梯，理由见上方整段。--on-accent/--on-ink 取 #0d1117（官方 --bgColor-default）：
+     色块上的字只能引用本块里的 token，而官方暗档唯一的"压字槽" --fgColor-onEmphasis 是白，
+     白字配这梯五个浅色块是 2.52~3.35。 */
+  --accent: #388bfd;            /* --button-outline-fgColor-rest */
+  --accent-strong: #4493f8;     /* --fgColor-accent（hover 往更亮走） */
+  --on-accent: #0d1117;         /* --bgColor-default */
+  --on-ink: #0d1117;            /* --bgColor-default */
+
+  --success: #3fb950;       /* --fgColor-success */
+  --danger: #f85149;        /* --fgColor-danger */
+  --warn: #d29922;          /* --fgColor-attention */
+
+  /* 十二色与 body.dark-mode 逐字相同（s1~s6 是承重层，§7(a)-5c 钉死）。 */
+  --c-s1: #ff7a6e;
+  --c-s2: #7fb0ff;
+  --c-s3: #ff8fc8;
+  --c-s4: #3fd6c2;
+  --c-s5: #ffab5c;
+  --c-s6: #7fdc78;
+  --c-s7: #ffe699;
+  --c-s8: #ccff99;
+  --c-s9: #99ffc3;
+  --c-s10: #99e9ff;
+  --c-s11: #cc99ff;
+  --c-s12: #fa99ff;
+
+  /* 圆角跨档不变：GitHub 的半径阶梯只有一份 size/radius.css，亮暗共用。 */
+  --r-sm: 3px;              /* --borderRadius-small (0.1875rem) */
+  --r-md: 6px;              /* --borderRadius-medium (0.375rem) */
+  --r-lg: 12px;             /* --borderRadius-large (0.75rem) */
+  --r-pill: 6px;            /* --borderRadius-medium：GitHub 无胶囊档 */
+  --r-full: 50%;
+}
+/* .topbar / .modal 那两条不重复写：它们读的是 var(--bg)/var(--surface)，
+   值已经被上面这个特异性更高的块换掉了（(0,2,1) 压过 body.theme-github 的 (0,1,1)）。 */
+
+/* ============================================================
    响应式
    ============================================================ */
 @media (max-width: 1024px) {
