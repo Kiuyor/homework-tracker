@@ -368,8 +368,8 @@ window.toggleDarkMode = function () {
 // 名单只有一份，就写在这条数组里——CSS 里的 body.theme-* 块由门禁 §7(a)-7c 与它双向
 // 对齐，抄进 index.html 的那一份迟早会和块不同名。whiteboard 是默认档且不加 class，
 // 所以「没选主题」时页面与本机制之前逐像素一致（spec 故事 2）。
-var THEME_NAMES = ['whiteboard', 'github'];
-var THEME_LABELS = { whiteboard: '白板', github: 'GitHub' };
+var THEME_NAMES = ['whiteboard', 'github', 'glass'];
+var THEME_LABELS = { whiteboard: '白板', github: 'GitHub', glass: '玻璃' };
 window.THEME_NAMES = THEME_NAMES;
 
 function validTheme(name) {

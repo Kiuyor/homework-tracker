@@ -78,12 +78,15 @@ const blockAt = sel => SRC.indexOf(sel + ' {');
 
 // token 块 = 只写变量定义的块。§7(a)-2 靠它豁免，§7(a)-7 靠它认主题。
 // 每加一档就要在这里在册一次——反过来，漏在册的块会被 :7(a)-7a 那条反向断言当场判红。
-const TOKEN_BLOCKS = new Set([':root', 'body.dark-mode', 'body.theme-github', 'body.theme-github.dark-mode']);
+const TOKEN_BLOCKS = new Set([':root', 'body.dark-mode',
+  'body.theme-github', 'body.theme-github.dark-mode', 'body.theme-glass']);
 
 // 外观族名单（"成套完整声明"的范围，spec §2 与 ADR-0012 决定 3 指的是同一份）。
 // 刻意不含 --sp-*（跨主题唯一）与 --show-*（承重层，只许改名不许改值）。
-// 材质族 --glass-blur/--glass-alpha/--floor-alpha 由工单 004 随 token 一起加进来：
-// 现在加等于要求 GitHub 声明一个还不存在的字段。
+// 材质族三条由工单 004 随玻璃档一起加进来。**加进名单就是要求每一档都声明它们**：
+// GitHub 那两块因此各写一份"无材质"（α=1、blur=0px）——这不是凑数，
+// 成套完整声明（§7(a)-7d）要的就是"这一档把外观族说满，不靠级联回落"，
+// 回落会拼出「GitHub 的方角 + 玻璃的半透浮层」那种哪套都不像的混合态。
 const APPEARANCE_TOKENS = [
   '--bg', '--surface', '--ink', '--ink-dim', '--ink-faint', '--line',
   '--accent', '--accent-strong', '--on-accent', '--on-ink',
@@ -91,6 +94,7 @@ const APPEARANCE_TOKENS = [
   '--c-s1', '--c-s2', '--c-s3', '--c-s4', '--c-s5', '--c-s6',
   '--c-s7', '--c-s8', '--c-s9', '--c-s10', '--c-s11', '--c-s12',
   '--r-sm', '--r-md', '--r-lg', '--r-pill', '--r-full',
+  '--glass-blur', '--glass-alpha', '--floor-alpha',
 ];
 
 // 主题名单只有一份，写在 ui.js 的 THEME_NAMES 里。HTML 里出现任何一档名字都是复制。
@@ -103,16 +107,67 @@ test('解析器本身可信：认不出这几条已知选择器就说明解析�
   // 'body.theme-github' 是主题化的探针：解析器读不到新块，003-005 的所有读数都是瞎的。
   // 带 .dark-mode 的那一条读的是**复合选择器**——解析器只测过单类名的块，
   // 而 004/005 的玻璃两档全靠这一层，读不到它就会把"块不存在"当成"值不达标"报出去。
+  // 玻璃档那一条不只测"块读得到"，还测**这个块真的挂了材质**（下面那句 assert.ok）：
+  // ①②两条反向门禁判的是"材质没跑到内容区/科目色上"，源码里一条 backdrop-filter 都没有时
+  // 它们会一起假绿——反向断言必须配一条正向的"这东西确实存在"，否则删掉整条材质就等于通过。
   for (const need of [':root', 'body.dark-mode', 'body.theme-github', 'body.theme-github.dark-mode',
-    '.add-btn', '.exit-show-btn', '@font-face']) {
+    'body.theme-glass', '.add-btn', '.exit-show-btn', '@font-face']) {
     assert.ok(blockOf(need), `解析器没找到 ${need}`);
   }
+  assert.ok(RULES.some(r => /^body\.theme-glass/.test(r.selector) &&
+      r.decls.some(d => d.prop === 'backdrop-filter')),
+    '没有任何 body.theme-glass* 规则带 backdrop-filter——材质整条没了，' +
+    '①②两条门禁会在"什么都没有"上假绿');
+  // chainOf 的 combo 要分得清"在里面"和"在旁边"——§7(a)-9b 的包含判据整个建在这一条上，
+  // 而它在真实源码里只走"后代"那一支（没有一条带 backdrop-filter 的层被同胞引用过），
+  // 所以 '+'/'~' 这两档不测就是没人验过的死码。写成死码不算错，写成错的判据才算。
+  assert.deepEqual(chainOf('.modal .dot').map(n => n.combo), [' ', ' '], '后代组合符');
+  assert.deepEqual(chainOf('.modal > .dot').map(n => n.combo), [' ', '>'], '子代组合符（空格夹着的 >）');
+  assert.deepEqual(chainOf('.modal>.dot').map(n => [n.combo, n.comp]), [[' ', '.modal'], ['>', '.dot']], '紧贴写的 >');
+  assert.deepEqual(chainOf('.modal + .dot').map(n => n.combo), [' ', '+'], '同胞组合符要单独成一档，不能和后代混');
 });
 
 /* ---------- §7(a)-1 动作色只归动作（ADR-0009） ---------- */
 
 // 墙上给学生看的选择器。动作色出现在这里 = 学生开始看到一个没有含义的蓝。
-const CONTENT = /(^|[\s,>+~])(\.subject-name|\.content|\.deadline|\.hw-empty|\.empty-line|\.subject-head|\.subject-group|\.hw-row|\.hw-list|\.bar|body)\b/;
+// 名单本体在下面那份 CONTENT_COMPOUND 里——它原来是一条"整条 selector 串"的正则，
+// 工单 004 把它改成按复合选择器逐段判（同一份名单，判的位置更准），这里不再留第二份。
+
+/** 把一条复合选择器拆成节点链，每个节点带上"前面的组合符"：' ' 后代 / '>' 子代 / '+' '~' 同胞。
+ *  全站只这一份拆分逻辑——§7(a)-1 与 §7(a)-9a 要的"链上有哪些段"、9a/9b 要的"属性落在谁身上"、
+ *  9b 要的"这个元素在不在半透层里面"，都是这一条链的不同读法。
+ *  各写一份 split 迟早一边放宽一边没放宽（004 期间就撞上过一次：整串匹配 vs 逐段匹配）。
+ *  9b 用得到 combo 这一段：老口径拿链上**任一**段去撞半透名单，子孙一直抓得到，
+ *  判不准的是同胞——`.modal + .subject-dot` 坐在弹层**旁边**、没压在玻璃上，老口径却判红并且
+ *  把理由写成"落在 .modal 这一层上"（判红但理由错）。拆链后遇到 '+'/'~' 就断开，包含关系是真的。 */
+function chainOf(part) {
+  const toks = String(part).replace(/\s*([>+~])\s*/g, ' $1 ').trim().split(/\s+/).filter(Boolean);
+  const out = [];
+  let combo = ' ';
+  for (const t of toks) {
+    if (t === '>' || t === '+' || t === '~') { combo = t; continue; }
+    out.push({ combo, comp: t });
+    combo = ' ';
+  }
+  return out;
+}
+const compoundsOf = (part) => chainOf(part).map(n => n.comp);
+
+/** 内容区判定（工单 004 起统一走这一条，§7(a)-1 与 §7(a)-9a/9b 共用一份口径）。
+ *  老口径 CONTENT 拿整条 selector 去匹配，于是 `body.theme-glass .expand-bar` 会因为**开头那个 body**
+ *  被判成内容区——本站所有主题覆写规则都长这样，照旧口径等于"主题一律不许碰动作色"，
+ *  而它管的从来不是这件事。新口径按复合选择器逐段判，并摘掉 `body.xxx` 这一类**整页作用域限定**
+ *  （body.dark-mode / body.view-show / body.theme-glass）：它们只是"在哪一档"，不是属性落点。
+ *  裸 `body` 必须留在名单里——页面自己那层底就是内容区。
+ *  这不是放松：`body.view-show .subject-name` 仍然被抓（落点那一段还在），被抓的从"整条串"变成"真实的落点"。 */
+const PAGE_QUALIFIER = /^body(?:\.[\w-]+)+$/;
+const CONTENT_COMPOUND = /^(?:body|\.(?:subject-name|content|deadline|hw-empty|empty-line|subject-head|subject-group|hw-row|hw-list|bar))(?:[.:\[]|$)/;
+function contentCompounds(part) {
+  return compoundsOf(part)
+    .filter(c => !PAGE_QUALIFIER.test(c))
+    .filter(c => CONTENT_COMPOUND.test(c));
+}
+
 // 本轮实施后 --accent 家族实际落在这些地方，逐条列死：新增一处就要在这里显式认账。
 const ACCENT_ALLOWED = new Set([
   ':where(a, button, input, select, textarea, [tabindex]):focus-visible',
@@ -126,6 +181,10 @@ const ACCENT_ALLOWED = new Set([
   '.seg-opt.active',
   '.tool-btn:hover', '.tool-btn.active', '.today-btn:hover',
   '#fontSizeSlider::-webkit-slider-thumb',
+  // 工单 004 新增一处：玻璃档把浮条 .expand-bar 的填充抽薄成 color-mix(--accent …)。
+  // 它仍是那条既有的动作色填充（同一条规则、同一个职责），只是多了 α——不是新落点。
+  // hover 档 **没有**跟着加：本档让 hover 退回深色实心，那是"变实＝按下"，也少一行清单。
+  'body.theme-glass .expand-bar',
 ]);
 
 test('§7(a)-1 动作色只出现在控件上，内容区一次都不用', () => {
@@ -137,8 +196,8 @@ test('§7(a)-1 动作色只出现在控件上，内容区一次都不用', () =>
     if (!hits.length) continue;
     used += hits.length;
     for (const part of rule.selector.split(',')) {
-      const p = part.trim();
-      if (CONTENT.test(p)) offenders.push(`${rule.selector} → ${p} 是内容区`);
+      const hit = contentCompounds(part);
+      if (hit.length) offenders.push(`${rule.selector} → ${hit.join(' ')} 是内容区`);
       else if (!ACCENT_ALLOWED.has(rule.selector) && !/:is|:where/.test(rule.selector)) {
         offenders.push(`${rule.selector} 不在已认账清单里`);
       }
@@ -271,6 +330,9 @@ test('§7(a)-5c 主题档整块逐字钉死：官方值不漂移，科目色不�
       '--c-s7': '#9a7913', '--c-s8': '#4d8811', '--c-s9': '#129147',
       '--c-s10': '#1484a3', '--c-s11': '#6b18bf', '--c-s12': '#b618bf',
       '--r-sm': '3px', '--r-md': '6px', '--r-lg': '12px', '--r-pill': '6px', '--r-full': '50%',
+      // 材质三条：本档不用材质，但"成套完整"要求它把字段说满（α=1 即不透、blur=0px 即不糊）。
+      // 不声明就会在玻璃档之后回落成上一条块的半透白——GitHub 的方角卡片浮在模糊底上，谁都没想要这个。
+      '--glass-blur': '0px', '--glass-alpha': '1', '--floor-alpha': '1',
     },
     // 暗档与亮档同族不同梯：底色/文字/边框走 --bgColor-* 与 --fgColor-* 的暗档值，
     // 动作与语义却走 **foreground** 梯而不是 emphasis 梯（理由与读数记在 style.css 那块的头注释、
@@ -287,6 +349,7 @@ test('§7(a)-5c 主题档整块逐字钉死：官方值不漂移，科目色不�
       '--c-s7': '#ffe699', '--c-s8': '#ccff99', '--c-s9': '#99ffc3',
       '--c-s10': '#99e9ff', '--c-s11': '#cc99ff', '--c-s12': '#fa99ff',
       '--r-sm': '3px', '--r-md': '6px', '--r-lg': '12px', '--r-pill': '6px', '--r-full': '50%',
+      '--glass-blur': '0px', '--glass-alpha': '1', '--floor-alpha': '1',
     },
   };
   for (const [sel, props] of Object.entries(PINNED)) {
@@ -427,6 +490,12 @@ test('§7(a)-8b 每一块的 --bg 相对自己那组六色最坏读数 ≥4:1', 
   // "有人把页底改暗一档"，这个错误对默认档同样成立，而默认档现在最坏 4.38、暗档 7.25，本来就过。
   // 地板取 4:1 不是 4.5：白板 s6 在白底只有 4.38，写 4.5 会把上一轮锁死的承重值当场判红，
   // 那是要单独裁决的改动，不是这条断言顺手能带进来的。后排能不能认出来归 008 人工裁。
+  //
+  // **只跑前排六色，是照故事 8 的字面判，不是漏了后排**（004 实施时量过一整张十二色表，读数见
+  // contrast-baseline.md §3 末）：后排 s7~s12 在纯白底上最坏也只有 4.06（s9 #129147），
+  // 玻璃档那块带冷调的页底 #f6f8fb 读到 3.86/3.82 —— 也就是说"十二色 ≥4:1"这条判据
+  // **没有任何带色调的亮底能满足**，把它写进门禁等于当场给上一轮锁死的值判红并替用户改设计。
+  // 那是一条待裁决的账（已登记），不是一条可以顺手抬高的门槛。
   const FLOOR = 4.0;
   const SIX = ['--c-s1', '--c-s2', '--c-s3', '--c-s4', '--c-s5', '--c-s6'];
   const HEX6 = /^#[0-9a-fA-F]{6}$/;
@@ -451,6 +520,128 @@ test('§7(a)-8b 每一块的 --bg 相对自己那组六色最坏读数 ≥4:1', 
     assert.deepEqual(out, [],
       `${sel} 的 --bg=${bg.value} 不在窗内：${out.join('、')}。六格读数 ${rows.join('  ')}`);
   }
+});
+
+/* ---------- §7(a)-9 玻璃档的三条边界（工单 004：材质只活在浮层） ---------- */
+
+// 判据形状：三条全是**反向断言**。正向白名单会漏掉下一个新增的浮层，反向断言会当场把它拦住。
+// 反向断言的代价是"什么都没有"也算过，所以每条都配了一句正向的"这东西确实存在"。
+
+/** 属性**落在**谁身上＝链最右端那个复合选择器；§7(a)-9b 拿它认"哪些层是带模糊的浮层"。
+ *  拆分本身不在这儿再写一份——统一走文件上方那份 chainOf。 */
+const subjectOf = (sel) => { const c = chainOf(sel); return c.length ? c[c.length - 1].comp : ''; };
+const MATERIAL = /var\(\s*--(glass-blur|glass-alpha|floor-alpha)\s*[,)]/;
+
+test('§7(a)-9a 材质不进内容区：内容节点上没有 backdrop-filter，也不引用材质 token', () => {
+  // 出处：spec 故事 10 + ADR-0012 决定 5。玻璃只折射浮层，信息永远坐在实底上——
+  // 这条边界一旦破，"透不透"和"读不读得清"就重新耦合，故事 8 那套复用六色的前提同时塌掉。
+  const offenders = [];
+  let frosted = 0;
+  for (const rule of RULES) {
+    const hasFilter = rule.decls.some(d => d.prop === 'backdrop-filter');
+    const usesToken = rule.decls.some(d => MATERIAL.test(d.value));
+    if (!hasFilter && !usesToken) continue;
+    if (hasFilter) frosted++;
+    for (const part of rule.selector.split(',')) {
+      const hit = contentCompounds(part);
+      if (hit.length) offenders.push(`${rule.selector} → ${hit.join(' ')} 是内容节点`);
+      // 材质 token 只在 body.theme-* 里声明（§7(a)-7d 管块内、这条管块外）。
+      // 白板那两块没有这三个字段：非主题作用域的规则引用它们＝拿到的是 guaranteed-invalid。
+      if (usesToken && !/\bbody\.theme-/.test(part)) {
+        offenders.push(`${rule.selector} 引用了材质 token 却没被 body.theme-* 限定`);
+      }
+    }
+  }
+  assert.ok(frosted >= 1, '一条 backdrop-filter 都没有：材质整条被删了，这条反向断言会假绿');
+  assert.deepEqual(offenders, [], '材质泄漏进内容区（故事 10）');
+});
+
+test('§7(a)-9b 科目色不上浮层：带 backdrop-filter 的层里没有一个科目色落点', () => {
+  // 出处：底账 §3 第 2/3 点。亮档六色压在半透白玻璃上，α 拉到 0.95 最坏仍只有 3.92——
+  // 背衬亮度未知时没有任何 α 能让科目色达标（Class B 死锁，不靠数字解）。
+  // 今天它天然成立：--subject-color 只由 ui.js 写在墙上的格子与作业行。断言钉的是后来人
+  // "顺手在弹层加个科目色小圆点"——那一笔会把整档的可读性变成一次实测才发现的事故。
+  const frostedSubjects = new Set();
+  for (const rule of RULES) {
+    if (!rule.decls.some(d => d.prop === 'backdrop-filter')) continue;
+    for (const part of rule.selector.split(',')) frostedSubjects.add(subjectOf(part.trim()));
+  }
+  const PAINT = /^(color|background|background-color|border-color|border-bottom|border-top|fill|outline)$/;
+  const SUBJ = /--subject-color\b|--c-s\d+\b/;
+  const offenders = [];
+  for (const rule of RULES) {
+    if (TOKEN_BLOCKS.has(rule.selector)) continue;   // 块内是声明值，不是落点
+    const hits = rule.decls.filter(d => PAINT.test(d.prop) && SUBJ.test(d.value));
+    if (!hits.length) continue;
+    for (const part of rule.selector.split(',')) {
+      // 落点只看链的**最右端**那个节点（属性写在谁身上），但"它在不在半透层里面"要沿链走一遍：
+      // ①属性就写在半透层自己身上；②写在它的子孙上（`.modal .subject-dot` 那颗小圆点不在 .modal 身上，
+      // 却实实在在压在玻璃上——背衬亮度未知的这一层就是那块玻璃）；③同胞不算在里面（见 chainOf 那段）。
+      const chain = chainOf(part.trim());
+      const last = chain.length - 1;
+      let inside = '';
+      for (let i = 0; i <= last; i++) {
+        const node = chain[i];
+        if (node.combo === '+' || node.combo === '~') inside = '';   // 同胞不在层内，链条断开
+        const frosted = frostedSubjects.has(node.comp);
+        if (i === last) {
+          if (frosted) offenders.push(`${rule.selector} 的科目色落在 ${node.comp} 这一层上（它自己就是半透层）`);
+          else if (inside) offenders.push(`${rule.selector} 的科目色落在 ${node.comp}，而它在半透层 ${inside} 里面`);
+        }
+        if (frosted) inside = node.comp;
+      }
+    }
+  }
+  assert.ok(frostedSubjects.size >= 1, '没有任何带 backdrop-filter 的层——上一条门禁已在本体上把关，这里只防清单空转');
+  assert.ok(offenders.length === 0, `科目色压在半透层上，读数无从保证：${offenders.join('；')}`);
+});
+
+test('§7(a)-9c 浮层 α 有下限：--glass-alpha/--floor-alpha 亮档 ≥0.92、暗档 ≥0.88', () => {
+  // 出处：spec 故事 9 的实测版（底账 §3）。0.92 这个数量的是**浮层上的文字**，不是科目色：
+  // 白板那组 --ink-dim 在 0.88 的白浮层上只有 3.82、0.92 才到 4.20（底账 §3 原表，量的是白板取值）。
+  // 玻璃档自己落地后跑了一遍阶梯（底账 §3〔004 实施后〕(3)）：--ink-dim 那一路反而更宽（0.88 已 5.03），
+  // 本档真正咬住门槛的是 .toast.success 的白字——0.92 → 4.60 过、0.88 → 4.25 掉出门槛。
+  // 暗档 0.88 保留（真边界 0.82~0.85）。没有这条断言，下一个人"顺手把 0.92 调成 0.8 更好看"不会触发任何报警。
+  const FLOOR = { light: 0.92, dark: 0.88 };
+  const ALPHA = ['--glass-alpha', '--floor-alpha'];
+  const offenders = [];
+  let judged = 0;
+  for (const sel of THEME_BLOCKS) {
+    const rule = blockOf(sel);
+    assert.ok(rule, `找不到 ${sel} 块`);
+    const dark = /\.dark-mode\b/.test(sel);
+    for (const p of ALPHA) {
+      const d = declOf(rule, p);
+      assert.ok(d, `${sel} 里没有 ${p}——成套完整声明要求它，材质下限也要求它`);
+      const v = Number(d.value);
+      assert.ok(Number.isFinite(v), `${sel} 的 ${p} 读不出数字（${d.value}）：断言不猜单位，写成分数或函数式都要另立判据`);
+      judged++;
+      const floor = dark ? FLOOR.dark : FLOOR.light;
+      if (v < floor) offenders.push(`${sel} { ${p}: ${v} } < ${floor}`);
+    }
+  }
+  assert.ok(judged >= 2, '一条 α 都没判到：主题块或材质 token 名单空了');
+  assert.deepEqual(offenders, [], '浮层 α 低于实测下限（底账 §3）');
+});
+
+test('§7(a)-9d 玻璃档不重算任何 hex：十二色与 :root 逐字相等', () => {
+  // 出处：spec 故事 7/8 的"复用不重算"，工单 004 的验收第一条。
+  // 判据写成**值相等**而不是"各自 ≥4:1"：达标由 --bg 落窗（§7(a)-8b）保证，
+  // 而"这一档到底有没有偷偷新算一个 hex"只有相等性能回答。§7(a)-8b 绿、六色却被换过，
+  // 是完全可能的一次误操作——那时窗口读数会跟着重新算绿，没人看得见颜色被换过。
+  const root = blockOf(':root');
+  assert.ok(root, '找不到 :root 块');
+  const glass = blockOf('body.theme-glass');
+  assert.ok(glass, '找不到 body.theme-glass 块');
+  const drift = [];
+  for (let i = 1; i <= 12; i++) {
+    const p = `--c-s${i}`;
+    const mine = declOf(glass, p);
+    const base = declOf(root, p);
+    assert.ok(mine && base, `${p} 在某一侧不见了`);
+    if (mine.value !== base.value) drift.push(`${p} ${base.value} → ${mine.value}`);
+  }
+  assert.deepEqual(drift, [], '玻璃档重算了科目色：' + drift.join('、') + '——理由见本条注释');
 });
 
 /* ---------- §7(a)-6 命中区不低于 44px（源码侧闸门） ---------- */

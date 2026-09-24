@@ -185,11 +185,21 @@ test('T3 圆角行的 rem→px 换算与 size/radius.css 对得上，一行都�
   for (const block of Object.keys(SOURCES)) {
     const body = blockBody(src, block);
     assert.ok(body, `style.css 里找不到 ${block} 块`);
-    const decls = [...body.matchAll(PX_DECL)];
+    // 本表只管圆角那一族（`--r-*`）：radius.css 是半径阶梯的源，别的 px 行不归它证。
+    // 收窄在这一行，不在"要不要标注"那一行——下面那条 borrowed 反向断言盯着反面：
+    // 谁把非圆角族的 px 行标上官方 token 名，就是拿一份没在册的上游给自己作保，当场判红。
+    const isRadius = tok => /^--r-/.test(tok);
+    const decls = [...body.matchAll(PX_DECL)].filter(([_, tok]) => isRadius(tok));
+    const others = [...body.matchAll(PX_ANNOTATED)].filter(([_, tok]) => !isRadius(tok))
+      .map(([_, tok, , name]) => `${tok}（标了 ${name}）`);
+    assert.deepEqual(others, [],
+      `${block} 里有非 --r-* 的 px 行标了官方 token 名：${others.join(' / ')}——` +
+      `radius.css 只给半径作保；要给别的字段找出处，先加进 SOURCES，别借现成的文件冒充`);
     // 地板按"声明"数而不是"标注"数算：完整性判据是相对声明而言的，声明被删光时它自己看不见自己。
     // （§7(a)-5c 的逐字钉死也会响，但那一响在另一个文件里，这支测试不该只在它缺席时才工作。）
     assert.ok(decls.length >= 4, `${block} 只有 ${decls.length} 条 px 圆角声明——亮档那块 sm/md/lg/pill 是四条，删声明是关网的办法之一`);
-    const rows = new Map([...body.matchAll(PX_ANNOTATED)].map(([, tok, px, name]) => [tok, { px, name }]));
+    const rows = new Map([...body.matchAll(PX_ANNOTATED)].filter(([_, tok]) => isRadius(tok))
+      .map(([, tok, px, name]) => [tok, { px, name }]));
     const naked = decls.filter(([, tok]) => !rows.has(tok)).map(([, tok, px]) => `${tok}: ${px}px`);
     assert.deepEqual(naked, [],
       `${block} 里有 ${naked.length} 条 px 圆角没有官方 token 标注：${naked.join(' / ')}——本档的圆角是照抄官方阶梯的，缺一行标注就少一次可查`);

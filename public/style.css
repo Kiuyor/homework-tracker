@@ -816,6 +816,13 @@ body.theme-github {
   --r-lg: 12px;             /* --borderRadius-large (0.75rem) */
   --r-pill: 6px;            /* --borderRadius-medium：GitHub 无胶囊档 */
   --r-full: 50%;            /* 圆点还是圆点，与主题无关 */
+
+  /* 材质三条本档不用，但仍要声明——成套完整声明（门禁 §7(a)-7d）不留回落缺口。
+     α=1、blur=0px 就是"这一档的浮层是实面"，它和"没写"不等价：没写的那一档
+     会去读上一条块的值，GitHub 的方角卡片于是浮在玻璃的半透白底上。 */
+  --glass-blur: 0px;
+  --glass-alpha: 1;
+  --floor-alpha: 1;
 }
 body.theme-github .topbar { background: var(--bg); }
 body.theme-github .modal { background: var(--surface); }
@@ -890,9 +897,162 @@ body.theme-github.dark-mode {
   --r-lg: 12px;             /* --borderRadius-large (0.75rem) */
   --r-pill: 6px;            /* --borderRadius-medium：GitHub 无胶囊档 */
   --r-full: 50%;
+
+  /* 与亮档那块同一句"本档无材质"，理由见那边的注释（成套完整声明不留回落缺口）。 */
+  --glass-blur: 0px;
+  --glass-alpha: 1;
+  --floor-alpha: 1;
 }
 /* .topbar / .modal 那两条不重复写：它们读的是 var(--bg)/var(--surface)，
    值已经被上面这个特异性更高的块换掉了（(0,2,1) 压过 body.theme-github 的 (0,1,1)）。 */
+
+/* ============================================================
+   主题：液态玻璃 · 亮档
+   ============================================================
+   版本戳（ADR-0012 决定 6 同一套规矩，本档没有外来官方值也要写明来源）：
+   · 六色一个都不新算——s1~s6 与 `:root`（`style.css:69-74` 那组锁死值）逐字相同，
+     s7~s12 同理。判据是门禁 §7(a)-5c 之外的另一条：值相等，不是"各自达标"。
+   · --bg 的窗口出处：.scratch/四主题体系/contrast-baseline.md §3「实施后」栏，
+     本档六色对 --bg=#f6f8fb 的最坏读数 4.12（s6），最亮 4.87（s5），全在 4:1 窗内。
+     窗口由门禁 §7(a)-8b 逐块实算钉住，改暗一档当场判红。
+   · 语义三色（success/danger/warn）逐字沿用白板那组：玻璃只换"材质与形状"，
+     没有自己的一套对错色。写在这里是因为它们**看起来**像自选值。
+   · 三条材质 token（--glass-blur/--glass-alpha/--floor-alpha）是本规格自订字段，
+     不来自任何包，所以这块里一行"官方 token 名"标注都不许出现——
+     test/token-provenance.test.js 的反向断言（T2 的 strays）正是抓这个。
+   · 本块排在 body.dark-mode 之后（门禁 §7(a)-7b）：同特异性 (0,1,1) 靠源码顺序决胜。
+     玻璃暗档是 005 的 body.theme-glass.dark-mode（(0,2,1)），在那之前"玻璃 + 暗色开关"
+     拿到的是这一档的亮底——与 002/003 之间 GitHub 的同一过渡期同形。 */
+body.theme-glass {
+  /* 信息永远坐在实底上：--bg 是**内容区那一层**，不是半透层。科目色、正文、截止时间
+     全部落在它上面，所以它们的读数是一个确定的数（Class A），不随背衬亮度漂。 */
+  --bg: #f6f8fb;
+  --surface: #ffffff;       /* 玻璃的"白"：浮层 tint 的源，被下面那些 color-mix 按 α 抽薄 */
+  --ink: #1b1f27;
+  --ink-dim: #55606f;       /* 对本档 --bg 6.00:1；压在 0.92 的白玻璃上 5.46（身后最暗）~6.39（身后白卡） */
+  --ink-faint: #8e97a6;     /* 2.77:1 —— 这一族五档全不达标，是同一处待裁项，不是本档新引入的洞 */
+  --line: #d9e0ea;
+
+  --accent: #2158c9;        /* 白字压在它上面 6.36:1；抽到 0.92 作浮条填充、压在最亮背衬上仍 5.39:1 */
+  --accent-strong: #17408f; /* 亮档 hover 往更暗走，与白板同方向 */
+  --on-accent: #ffffff;
+  --on-ink: #ffffff;
+
+  --success: #1d7a3f;
+  --danger: #b42318;
+  --warn: #b45309;
+
+  /* s1~s6 与 :root 逐字相同（承重层，§7(a)-5 钉死）；成套完整声明不留回落。 */
+  --c-s1: #cf3227;
+  --c-s2: #2f6fd0;
+  --c-s3: #c23a8b;
+  --c-s4: #0d8574;
+  --c-s5: #c2410c;
+  --c-s6: #2f8a2e;
+  --c-s7: #9a7913;
+  --c-s8: #4d8811;
+  --c-s9: #129147;
+  --c-s10: #1484a3;
+  --c-s11: #6b18bf;
+  --c-s12: #b618bf;
+
+  /* 形状族：玻璃是圆的，且圆得很随意——白板那档的 8/12/16 是给"纸"的，玻璃给的是"液滴"。
+     --r-pill 保持 999px：提交钮两端收圆这件事与主题无关，它是胶囊不是圆角矩形。 */
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 24px;
+  --r-pill: 999px;
+  --r-full: 50%;
+
+  /* 材质。0.92 不是审美数：底账 §3 那条 α 判据量的是"浮层上的文字"（白板取值 0.88→3.82、0.92→4.20），
+     本档落地后同一判据换到玻璃自己的取值上重跑了一遍（底账 §3〔004 实施后〕(3) 整张阶梯）——
+     本档最紧的一处是 .toast.success 的白字：0.88→4.25 掉出门槛、0.92→4.60 过。
+     门禁 §7(a)-9c 把这个下限钉成一族规则（暗档 0.88）。--floor-alpha 是**没有 blur 可依托时**
+     的实面 α（@supports 退路分支读它）——同一片白，模糊替它挡住了身后穿过的字，去掉模糊就得靠不透明度。 */
+  --glass-blur: 20px;
+  --glass-alpha: 0.92;
+  --floor-alpha: 0.97;
+}
+
+/* 材质只落在这几类浮层上（spec 故事 10 的名单：顶栏、弹层、浮条、toast，加 ADR-0013 的主题弹层）。
+   写法是 color-mix(…, transparent) 而不是 rgba(255,255,255,.92)：三通道读本档的 token，
+   α 读 --glass-alpha，这一行不重复任何一个数字——底账 §3 那张 α 阶梯表量的就是"同一色抽薄"，
+   把通道抄成字面量的话，改 --surface 的人与改 α 的人就各自在算一半。
+   顺带一条降级：color-mix 认不出的浏览器（Chromium <111 / Safari <16.2）整条丢弃，
+   背景落回 .topbar/.modal 原有的实底 var(--bg)/var(--surface)——不是"坏掉"，是退回实面。
+   门禁 §7(a)-9a 反向钉这条边界（内容节点上不许出现 backdrop-filter，也不许引用材质 token），
+   §7(a)-9b 钉"科目色不落半透层"——那才是亮档六色能整套复用的结构前提。 */
+body.theme-glass .topbar {
+  background: color-mix(in srgb, var(--surface) calc(var(--glass-alpha) * 100%), transparent);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+body.theme-glass .modal {
+  background: color-mix(in srgb, var(--surface) calc(var(--glass-alpha) * 100%), transparent);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+/* 主题选项弹层：本站第一个真弹层，也是第一个"浮层上带文字"的落点。
+   它的选项吃 --ink-dim，正是 α 下限那条判据管的对象——本档 --ink-dim 压在 0.92 的白玻璃上
+   最坏 5.46（背衬集合按保守界取：身后整片是墨色；真实场景是墨色笔画穿过模糊层，读数落在 5.46~6.39 之间），
+   比底账 §3 拿白板 --ink-dim 在同一条判据下量到的 4.20 更宽。
+   下限不跟着放松：那条 0.92 是族规（五档共用一个 α 地板），不是本档的实测结论——
+   本档真正咬住 0.92 的地方在下面那条 toast 注释里（0.88 时语义填充跌到 4.25）。 */
+body.theme-glass .theme-pop .seg {
+  background: color-mix(in srgb, var(--surface) calc(var(--glass-alpha) * 100%), transparent);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+/* 浮条与 toast 的填充本来就是动作色/墨色——抽薄之后白字读数仍然在 4.5 以上，
+   但**只对最亮那一档背衬成立**（success 抽到 0.92 压在最亮背衬——白卡——上 4.60，是全档最紧的一处；
+   同一处 0.88 只有 4.25，掉出门槛）。所以 0.92 这条下限在本档不是"族规顺带"：
+   它上面写着的那句"下限不跟着放松"在本档有一处自己的约束点，就在这一行。
+   这不是"顺手也能做"：它是底账 §3 那条 α 判据换到深色填充上的同一次复算（整张阶梯见底账 §3〔004 实施后〕，
+   脚本 .scratch/四主题体系/alpha-ladder-glass.js）。 */
+body.theme-glass .expand-bar {
+  background: color-mix(in srgb, var(--accent) calc(var(--glass-alpha) * 100%), transparent);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+body.theme-glass .toast {
+  background: color-mix(in srgb, var(--ink) calc(var(--glass-alpha) * 100%), transparent);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+body.theme-glass .toast.success {
+  background: color-mix(in srgb, var(--success) calc(var(--glass-alpha) * 100%), transparent);
+}
+body.theme-glass .toast.error {
+  background: color-mix(in srgb, var(--danger) calc(var(--glass-alpha) * 100%), transparent);
+}
+/* hover 档不跟着抽薄（.expand-bar:hover / .toast 的语义变体除外，它们没有 hover）：
+   本档 --accent-strong 是深色实心，浮层在 hover 时"变实"就是它的按下反馈。
+   少写这一条覆写，就少往 ACCENT_ALLOWED 里塞一个选择器——那条清单每多一行都要一句理由。 */
+
+/* 能力退路（spec 故事 25）：不支持 backdrop-filter 时，玻璃退成"同一族 α、去掉模糊"的实面浮层。
+   α 从 --glass-alpha 换到 --floor-alpha（0.92→0.97）就是那一步：模糊本来替浮层挡住身后穿过的字，
+   没有模糊就得靠不透明度挡。**内容区一行都不读这两条 α**，所以支持与否，内容区读数一字不变。
+   全站此前零条 @supports（只有 @media），这条是第一条——门禁的解析器会递归进 @supports，
+   里面的选择器照样被 §7(a)-9a/9b 判，不存在"藏在退路里就没人看"。 */
+@supports not (backdrop-filter: blur(1px)) {
+  body.theme-glass .topbar,
+  body.theme-glass .modal,
+  body.theme-glass .theme-pop .seg {
+    background: color-mix(in srgb, var(--surface) calc(var(--floor-alpha) * 100%), transparent);
+  }
+  body.theme-glass .expand-bar {
+    background: color-mix(in srgb, var(--accent) calc(var(--floor-alpha) * 100%), transparent);
+  }
+  body.theme-glass .toast {
+    background: color-mix(in srgb, var(--ink) calc(var(--floor-alpha) * 100%), transparent);
+  }
+  body.theme-glass .toast.success {
+    background: color-mix(in srgb, var(--success) calc(var(--floor-alpha) * 100%), transparent);
+  }
+  body.theme-glass .toast.error {
+    background: color-mix(in srgb, var(--danger) calc(var(--floor-alpha) * 100%), transparent);
+  }
+}
 
 /* ============================================================
    响应式
