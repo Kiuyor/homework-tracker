@@ -33,18 +33,12 @@ window.renderHomeworks = function () {
   }
   groupsEl.innerHTML = '';
 
-  // 应用科目筛选
   var list = state.homeworks;
-  if (state.filterSubjectId) {
-    list = list.filter(function (h) { return h.subject_id === state.filterSubjectId; });
-  }
 
   if (list.length === 0) {
     var word = window.dayWord(state.currentDate);
     var emptyText;
-    if (state.homeworks.length !== 0) {
-      emptyText = '该科目' + word + '没有作业';
-    } else if (state.viewMode === 'show') {
+    if (state.viewMode === 'show') {
       // 展示态整日为空是给全班看的一句话，不借用编辑态那句口吻
       emptyText = { 今天: '今日作业待公布', 明天: '明日作业待公布', 昨天: '昨天未布置作业' }[word]
         || (word + '未布置作业');
@@ -278,7 +272,7 @@ function enterAddMode() {
   var state = window.AppState;
   state.editingId = null;
   state.editingDeadline = null;
-  state.subjectConvertedId = null;
+  state.subjectPickId = null; // 新建时不预选：默认"没选科目"，保存时挡住
   state.deadlineOwnerDate = window.formatDate(state.currentDate); // 「当天」= 正在查看的这一天
   window.setDeadlineDay(0);
   dom.modalTitle.textContent = '添加作业';
@@ -288,7 +282,7 @@ function enterAddMode() {
 window.openAddModal = function () {
   var dom = window.AppDom;
   enterAddMode();
-  dom.subjectInput.value = '';
+  window.renderSubjectSeg();
   dom.contentInput.value = '';
   var deadlineInput = document.getElementById('deadlineInput');
   if (deadlineInput) deadlineInput.value = '';
@@ -300,13 +294,13 @@ window.openEditModal = function (hw) {
   var dom = window.AppDom;
   var state = window.AppState;
   state.editingId = hw.id;
-  state.subjectConvertedId = null; // 从行上点进来的：不欠"换科目要退回新建"这笔账
   state.editingDeadline = hw.deadline || null; // 保留原日期，只允许改时间
   state.deadlineOwnerDate = hw.date;
   window.setDeadlineDay(window.deadlineDayOffsetOf(hw.deadline, hw.date));
-  dom.modalTitle.textContent = '编辑作业';
+  dom.modalTitle.textContent = hw.subject_name ? '编辑〈' + hw.subject_name + '〉' : '编辑作业';
   dom.editId.value = hw.id;
-  dom.subjectInput.value = hw.subject_name || ''; // 回填名字而不是 id：框现在可输入
+  state.subjectPickId = hw.subject_id;
+  window.renderSubjectSeg();
   dom.contentInput.value = hw.content;
   var deadlineInput = document.getElementById('deadlineInput');
   if (deadlineInput) deadlineInput.value = hw.deadline ? formatDeadlineInput(hw.deadline) : '';
@@ -318,110 +312,118 @@ window.closeModal = function () {
   window.AppDom.modalOverlay.classList.add('hidden');
 };
 
-// ============ 「添加作业」里选到当天已有作业的科目 = 改那一条（ADR-0005 的入口口径） ============
-// 一科一条之后，这个动作不再意味着"造出第二条"，而是"回去改那一条"。判定只读
-// state.homeworks 的现成数据——为它多发一次请求，会把一次输入法提交拆成两跳。
-//
-// 触发点只能挂在 change：实测逐字敲「语文补充练习」时，input 事件里会先出现
-// input="语文" 这个完整匹配。挂在 input 上，想录新科目的人敲到第二个字就被切走。
-
-var _subjectValueAtFocus = ''; // 回到这个框之前是什么样，取消覆盖时就退回什么样
-
-window.snapshotSubjectInput = function () {
-  _subjectValueAtFocus = window.AppDom.subjectInput.value;
-};
-
-window.onSubjectBoxChange = function () {
+// ============ 科目选择器（六科闭集，ADR-0011） ============
+// 名单取自 state.subjects（GET /api/subjects），前端不再另写一份：墙上有几格，这里就有
+// 几个按钮。带圆点 = 当天这一科已经录过，点它直接去改那一条，不弹确认——按钮自己已经
+// 说出这格不是空的。原先那个能逐字敲的框必须弹：实测敲「语文补充练习」会先经过
+// input="语文" 这个完整匹配，不弹就把人半路劫走了；按钮没有中间态，这笔账随之消失。
+window.renderSubjectSeg = function () {
   var dom = window.AppDom;
   var state = window.AppState;
-  var name = dom.subjectInput.value.trim();
-  if (!name) return; // 清空科目框不算"选科目"，交给保存时的必选守卫
-
-  var subj = state.subjects.find(function (s) { return s.name === name; });
-  var hw = subj && state.homeworks.find(function (h) { return h.subject_id === subj.id; });
-
-  if (hw) {
-    if (state.editingId === hw.id) return; // 已经在改这条，不重复问
-    // 从行上点进来的编辑态：这里的科目框是"给这条换科目"的字段，不劫持它的意图。
-    // 真换到当天已有作业的科目会被唯一索引挡成 409，那句文案会说明该去改哪一条。
-    if (state.editingId && state.subjectConvertedId !== state.editingId) return;
-    if (convertToAddModalEdit(hw)) _subjectValueAtFocus = dom.subjectInput.value;
-    return;
-  }
-
-  // 该科当天还没作业，或这个名字是新科目 → 是新建。若刚才被切成了编辑态，
-  // 必须退回来：否则用户改了科目名却把正文 PUT 到上一条被选中的作业上。
-  if (state.subjectConvertedId) enterAddMode();
+  if (!dom.subjectSeg) return;
+  dom.subjectSeg.textContent = '';
+  state.subjects.forEach(function (s) {
+    var on = String(s.id) === String(state.subjectPickId);
+    var recorded = state.homeworks.some(function (h) { return h.subject_id === s.id; });
+    var note = s.name + (recorded ? '（今天已录，点这里是改那一条）' : '（今天还没录）');
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'seg-opt' + (on ? ' active' : '') + (recorded ? ' recorded' : '');
+    b.dataset.subjectId = s.id;
+    b.textContent = s.name;
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.setAttribute('aria-label', note);
+    b.title = note; // 圆点只是标记，形状不能独自承担含义
+    dom.subjectSeg.appendChild(b);
+  });
 };
 
-function convertToAddModalEdit(hw) {
+window.pickSubject = function (id) {
   var dom = window.AppDom;
-  var typed = dom.contentInput.value.trim();
-  if (typed && !window.confirm('该科今天已有作业，用它的正文替换当前输入？')) {
-    dom.subjectInput.value = _subjectValueAtFocus; // 一个字都不冲，退回上一版
-    return false;
+  var state = window.AppState;
+  var hw = null;
+  for (var i = 0; i < state.homeworks.length; i++) {
+    if (state.homeworks[i].subject_id === id) { hw = state.homeworks[i]; break; }
   }
-  window.openEditModal(hw);
-  // 回填走 openEditModal（它负责 deadline 的「当天/次日」口径），只有标题说出选了哪一科
-  dom.modalTitle.textContent = '编辑〈' + hw.subject_name + '〉';
-  window.AppState.subjectConvertedId = hw.id;
-  return true;
-}
-
-// ============ 科目候选（开放集） ============
-// 科目名不再固定六科：保存作业时敲进来的新名会自动建科，候选框与筛选器
-// 必须跟着重画，否则「刚录的政治，下一条还得重敲」，而且 renderHomeworks
-// 是按 state.subjects 分组的——列表里没有这个科目，这一条就压根上不了墙。
-window.renderSubjectOptions = function () {
-  var dom = window.AppDom;
-  var subjects = window.AppState.subjects || [];
-
-  if (dom.subjectOptions) {
-    dom.subjectOptions.textContent = '';
-    subjects.forEach(function (s) {
-      var opt = document.createElement('option');
-      opt.value = s.name;
-      dom.subjectOptions.appendChild(opt);
-    });
-  }
-
-  if (dom.subjectFilter) {
-    var prev = dom.subjectFilter.value;
-    dom.subjectFilter.textContent = '';
-    var all = document.createElement('option');
-    all.value = '';
-    all.textContent = '全部科目';
-    dom.subjectFilter.appendChild(all);
-    subjects.forEach(function (s) {
-      var opt = document.createElement('option');
-      opt.value = s.id;
-      opt.textContent = s.name;
-      dom.subjectFilter.appendChild(opt);
-    });
-    dom.subjectFilter.value = prev;
-    if (dom.subjectFilter.value !== prev) {
-      // 原先筛中的科目不在了：同步回「全部」，不然筛选器显示的和 AppState 记的不是一个
-      dom.subjectFilter.value = '';
-      window.AppState.filterSubjectId = null;
-    }
-  }
-};
-
-window.refreshSubjects = async function () {
-  try {
-    await window.loadSubjects();
-  } catch (err) {
-    // 拉取失败不值得打断保存：作业已经写进去了，候选少一项下次自然会补上
-    console.warn('[作业墙] 科目列表刷新失败，候选暂不含新科目：', err && err.message);
+  // 添加态点到已录的科目 = 去改那一条（ADR-0005 的入口口径，触发方式由"敲完名字"
+  // 变成"点按钮"）。已经在改这条了就是空点，落回下面的普通选中。
+  // 例外：框里已经写了正文就别半路劫走——只换成"目标是这科"，保存时由 409 那句话指路。
+  // 规格故事 15 要"已输入的正文不许丢"，ADR-0011 第 5 条要"不弹确认"，不切换正好两条都守。
+  if (hw && !state.editingId && !dom.contentInput.value.trim()) {
+    window.openEditModal(hw);
     return;
   }
-  window.renderSubjectOptions();
+  state.subjectPickId = id;
+  window.renderSubjectSeg();
 };
 
 // ============ Dark Mode ============
 window.toggleDarkMode = function () {
   var isDark = document.body.classList.toggle('dark-mode');
   localStorage.setItem('hw_darkmode', isDark ? '1' : '0');
+};
+
+// ============ 主题轴（ADR-0012 决定 1） ============
+// 与上面那条明暗轴**正交**：dark-mode 管档位，theme-* 管骨相，两把 class 各自独立。
+// 名单只有一份，就写在这条数组里——CSS 里的 body.theme-* 块由门禁 §7(a)-7c 与它双向
+// 对齐，抄进 index.html 的那一份迟早会和块不同名。whiteboard 是默认档且不加 class，
+// 所以「没选主题」时页面与本机制之前逐像素一致（spec 故事 2）。
+var THEME_NAMES = ['whiteboard', 'github'];
+var THEME_LABELS = { whiteboard: '白板', github: 'GitHub' };
+window.THEME_NAMES = THEME_NAMES;
+
+function validTheme(name) {
+  return THEME_NAMES.indexOf(name) >= 0 ? name : 'whiteboard';
+}
+
+// applyTheme：只摆 DOM 与 state，不写盘——init 读盘时走这条，避免启动即写一次 localStorage。
+window.applyTheme = function (name) {
+  var theme = validTheme(name);
+  var body = document.body;
+  for (var i = 0; i < THEME_NAMES.length; i++) {
+    if (THEME_NAMES[i] !== 'whiteboard') body.classList.remove('theme-' + THEME_NAMES[i]);
+  }
+  if (theme !== 'whiteboard') body.classList.add('theme-' + theme);
+  window.AppState.theme = theme;
+  window.renderThemeSeg();
+  return theme;
+};
+
+// setTheme：用户在控件上点出来的那一次才落盘。切主题只改 class，不重载页面——
+// 弹窗里已录入未保存的正文不许被刷掉（spec 故事 24）。
+window.setTheme = function (name) {
+  var theme = window.applyTheme(name);
+  localStorage.setItem('hw_theme', theme);
+};
+
+window.renderThemeSeg = function () {
+  var seg = document.getElementById('themeSeg');
+  var active = window.AppState.theme || 'whiteboard';
+  // 入口的文案与选项同源：都读这一份名单，不在 HTML 里另抄一份"主题：白板"。
+  var btn = document.getElementById('themeBtn');
+  if (btn) btn.textContent = '主题 · ' + (THEME_LABELS[active] || active);
+  if (!seg) return;
+  seg.textContent = '';
+  THEME_NAMES.forEach(function (name) {
+    var on = name === active;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'seg-opt' + (on ? ' active' : '');
+    b.dataset.theme = name;
+    b.textContent = THEME_LABELS[name] || name;
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    seg.appendChild(b);
+  });
+};
+
+// 弹层开合（ADR-0013）：只摆 class 与 aria-expanded，不写盘——开着不选等于没改主意。
+// 开合状态只有这一处作者：重绘（renderThemeSeg）与切档（applyTheme）都不碰它。
+window.setThemePop = function (open) {
+  var pop = document.getElementById('themePop');
+  var btn = document.getElementById('themeBtn');
+  if (!pop || !btn) return;
+  pop.classList.toggle('hidden', !open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
 };
 
 // ============ View Mode（编辑/展示）单一入口 ============
@@ -438,6 +440,10 @@ window.applyViewMode = function () {
   dom.modeToggle.classList.toggle('active', show);
   document.body.classList.toggle('view-show', show);
   document.body.classList.toggle('manage-on', !show);
+  // 弹层跟着顶栏一起收尾：展示态不泄漏可操作控件（verify-47a 故事 9 的判据），
+  // 而编辑态闲置回弹也走这条路——人走开时开着的那层若留在 DOM 里，
+  // 下一次退出展示就会以"上次没关"的状态回来。
+  window.setThemePop(false);
 
   if (show) {
     window.stopEditIdle();

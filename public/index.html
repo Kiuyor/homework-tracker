@@ -13,22 +13,10 @@
 </head>
 <body>
 
-  <!-- 顶部一行 -->
+  <!-- 顶部：第一行品牌与动作，第二行工具行（日期 · 字号 · 暗色）整组居中（ADR-0010） -->
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand">作业</div>
-      <div class="date-nav" id="dateNav">
-        <button class="date-btn" id="prevDate" title="前一天">
-          <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
-        </button>
-        <div class="date-display" id="dateDisplay">
-          <span id="dateLabel"></span>
-        </div>
-        <button class="date-btn" id="nextDate" title="后一天">
-          <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
-        </button>
-        <button class="today-btn" id="todayBtn">今天</button>
-      </div>
       <div class="top-actions">
         <button class="mode-toggle" id="modeToggle">展示</button>
         <button class="add-btn" id="addBtn">
@@ -39,6 +27,37 @@
           <svg viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg>
         </button>
       </div>
+      <div class="tool-row">
+        <div class="date-nav" id="dateNav">
+          <button class="date-btn" id="prevDate" title="前一天">
+            <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="date-display" id="dateDisplay">
+            <span id="dateLabel"></span>
+          </div>
+          <button class="date-btn" id="nextDate" title="后一天">
+            <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+          <button class="today-btn" id="todayBtn">今天</button>
+        </div>
+        <div class="font-wrap">
+          <span class="fs-label">字号</span>
+          <input type="range" id="fontSizeSlider" min="18" max="88" value="44" step="1" title="字号">
+          <span id="fontSizeLabel">44px</span>
+        </div>
+        <button class="tool-btn icon-only" id="darkmodeBtn" title="暗色模式">
+          <svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+        <!-- 主题入口（ADR-0013）：工具行只常驻这一颗按钮，四档选项装在它下面的弹层里。
+             入口的文案由 ui.js 写成「主题 · 当前档」，选项由 THEME_NAMES 生成——
+             名单在这里出现一次，就会有两份。 -->
+        <div class="theme-entry">
+          <button class="tool-btn" id="themeBtn" type="button" aria-expanded="false" aria-controls="themePop">主题</button>
+          <div class="theme-pop hidden" id="themePop">
+            <div class="seg theme-seg" id="themeSeg" role="group" aria-label="主题"></div>
+          </div>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -47,25 +66,6 @@
     <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
     显示顶栏
   </button>
-
-  <!-- 编辑模式扩展条（编辑模式常驻显示） -->
-  <div class="manage-bar" id="manageBar">
-    <div class="filter-wrap">
-      <select class="subject-filter" id="subjectFilter" title="按科目筛选">
-        <option value="">全部科目</option>
-      </select>
-    </div>
-    <div class="manage-divider"></div>
-    <div class="font-wrap">
-      <span class="fs-label">字号</span>
-      <input type="range" id="fontSizeSlider" min="18" max="88" value="44" step="1" title="字号">
-      <span id="fontSizeLabel">44px</span>
-    </div>
-    <div class="manage-divider"></div>
-    <button class="tool-btn icon-only" id="darkmodeBtn" title="暗色模式">
-      <svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-    </button>
-  </div>
 
   <!-- 主体：科目分组 -->
   <main class="main">
@@ -87,12 +87,11 @@
              字段区滚动，而下方「取消/保存」始终留在模态底部（故事 18） -->
         <div class="form-body">
           <div class="form-group">
-            <label for="subjectInput">科目</label>
-            <!-- 开放集：下拉里选已有的，或直接敲新名（保存时自动建科）。
-                 原来这里是 <select>，全站没有增删科目入口，政治/历史/地理无处可录。 -->
-            <input type="text" id="subjectInput" list="subjectOptions" maxlength="50"
-                   autocomplete="off" placeholder="选择或输入科目，如 政治">
-            <datalist id="subjectOptions"></datalist>
+            <label id="subjectSegLabel">科目</label>
+            <!-- 六科闭集（ADR-0011）：这里不再是一个能敲字的框。六个按钮由 renderSubjectSeg
+                 按 state.subjects 画——不在前端另写一份名单，墙上有几格这里就有几个按钮。
+                 原来是 <select>（无增删入口）→ datalist 自由输入（ADR-0004）→ 现在收回闭集。 -->
+            <div class="seg seg-subject" id="subjectSeg" role="group" aria-labelledby="subjectSegLabel"></div>
           </div>
           <div class="form-group">
             <label for="contentInput">作业内容</label>

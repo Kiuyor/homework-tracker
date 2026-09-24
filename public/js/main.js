@@ -49,6 +49,9 @@
 
   dom.collapseBtn.addEventListener('click', function () {
     document.body.classList.add('topbar-hidden');
+    // 顶栏收起 = 那条工具行连同弹层的宿主一起消失。开着的弹层留在 DOM 里，
+    // 展开顶栏时会以"上次没关"的状态回来——入口的 aria-expanded 也跟着说不清。
+    window.setThemePop(false);
     showExpandBtn();
   });
   dom.expandBtn.addEventListener('click', function () {
@@ -74,13 +77,6 @@
   document.addEventListener('touchstart', function (e) {
     if (!document.body.classList.contains('topbar-hidden')) return;
     if (e.touches[0].clientY < 120) showExpandBtn();
-  });
-
-  // Subject filter
-  dom.subjectFilter.addEventListener('change', function () {
-    var val = dom.subjectFilter.value;
-    window.AppState.filterSubjectId = val ? parseInt(val) : null;
-    window.renderHomeworks();
   });
 
   // Dark mode
@@ -124,10 +120,15 @@
   // 「点空白处 = 静默清空已输入内容」是实测到的日常事故（故事 15）。
   // 离开模态只剩三条显式路：保存、取消、右上角 ×。
 
-  // 「添加作业」里选到当天已有作业的科目 → 切成改那一条（ADR-0005，故事 14/15）。
-  // 挂在 change 而不是 input：实测逐字敲「语文补充练习」会先经过 input="语文" 这个完整匹配。
-  dom.subjectInput.addEventListener('focus', window.snapshotSubjectInput);
-  dom.subjectInput.addEventListener('change', window.onSubjectBoxChange);
+  // 科目选择器：六个按钮，名单来自 state.subjects（ADR-0011）。委托在容器上——
+  // 按钮会被 renderSubjectSeg 整批重建，逐个绑 listener 会在重绘后静默失灵。
+  if (dom.subjectSeg) {
+    dom.subjectSeg.addEventListener('click', function (e) {
+      var opt = e.target.closest ? e.target.closest('.seg-opt') : null;
+      if (!opt) return;
+      window.pickSubject(parseInt(opt.dataset.subjectId, 10));
+    });
+  }
 
   // 「当天/次日」段式控件（截止时间落在所属日还是它的次日）
   var deadlineDaySeg = document.getElementById('deadlineDaySeg');
@@ -139,6 +140,40 @@
     });
   }
 
+  // 主题入口（ADR-0013）：一颗常驻按钮，选项在它自己的弹层里。宽度账也在那张 ADR——
+  // 常驻四选一横排约 300px 挤在工具行里，换成按钮约 90px，弹层只在点开时占地方。
+  var themeBtn = document.getElementById('themeBtn');
+  if (themeBtn) {
+    themeBtn.addEventListener('click', function () {
+      var pop = document.getElementById('themePop');
+      window.setThemePop(pop.classList.contains('hidden'));
+    });
+  }
+  // 段钮会被 renderThemeSeg 整批重建，委托绑在容器上；选完顺手收弹层，
+  // 点空白与 Esc 也收——一个开着的浮层没有第二条出路，触控下就是关不掉。
+  var themeSeg = document.getElementById('themeSeg');
+  if (themeSeg) {
+    themeSeg.addEventListener('click', function (e) {
+      var opt = e.target.closest ? e.target.closest('.seg-opt') : null;
+      if (!opt) return;
+      window.setTheme(opt.dataset.theme);
+      window.setThemePop(false);
+    });
+  }
+  document.addEventListener('click', function (e) {
+    var pop = document.getElementById('themePop');
+    if (!pop || pop.classList.contains('hidden')) return;
+    var entry = document.getElementById('themeBtn');
+    // contains() 含自身，所以入口那颗钮不必另判
+    if ((entry && entry.contains(e.target)) || pop.contains(e.target)) return;
+    window.setThemePop(false);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var pop = document.getElementById('themePop');
+    if (pop && !pop.classList.contains('hidden')) window.setThemePop(false);
+  });
+
   // Form submit
   dom.homeworkForm.addEventListener('submit', async function (e) {
     e.preventDefault();
@@ -146,17 +181,14 @@
       content: dom.contentInput.value.trim(),
       date: window.formatDate(state.currentDate),
     };
-    // 科目框现在可输入：与已有科目同名 → 提交 id（不重复建科）；
-    // 是个新名字 → 提交 name，后端在同一事务里自动建科。
-    // 两者都空 → 挡住。科目必选（后端也会拒：「作业必须属于一个科目」），但别等到网络回来。
-    var subjText = dom.subjectInput.value.trim();
-    var subj = subjText ? state.subjects.find(function (s) { return s.name === subjText; }) : null;
-    if (subj) data.subject_id = subj.id;
-    else if (subjText) data.subject_name = subjText;
-    else {
-      window.showToast('请选择或输入科目', 'error');
+    // 科目只能是选择器点出来的那一个：id 直发，不再有可能带一个新名字的 subject_name 分支
+    // （后端同样拒收，见 ADR-0011）。没点 = 挡住，别等到网络回来。
+    var subj = state.subjects.find(function (s) { return String(s.id) === String(state.subjectPickId); });
+    if (!subj) {
+      window.showToast('请选择科目', 'error');
       return;
     }
+    data.subject_id = subj.id;
     var deadlineVal = document.getElementById('deadlineInput').value.trim();
     data.deadline = null;
     if (deadlineVal) {
@@ -187,9 +219,8 @@
         window.showToast('已添加', 'success');
       }
       window.closeModal();
-      // 这次保存可能新建了科目；不重拉一次，renderHomeworks 按 state.subjects 分组时
-      // 这一条会因为「找不到所属科目」而整个不上墙。
-      await window.refreshSubjects();
+      // 不再重拉科目列表：六科闭集之后保存不可能造出新科目，
+      // 而 renderHomeworks 分组的依据（state.subjects）自始至终没变过。
       window.loadHomeworks();
     } catch (err) {
       // 后端给出的话原样搬上屏（409 那句要点名"该去改哪一条"），不套「操作失败」的壳。
@@ -225,6 +256,10 @@ window.init = async function () {
     document.body.classList.add('dark-mode');
   }
 
+  // 主题轴（ADR-0012 决定 1）：读盘只在这条正交轴上做一次，上面那八行一字未改。
+  // 没有 hw_theme 就落在 whiteboard——**主题不跟随系统**，系统只给明暗信号，没有主题信号。
+  window.applyTheme(localStorage.getItem('hw_theme'));
+
   // Restore font size
   var savedFontSize = localStorage.getItem('hw_fontSize');
   if (savedFontSize) {
@@ -238,10 +273,9 @@ window.init = async function () {
     window.applyFontSize(44);
   }
 
-  // Load subjects
+  // Load subjects：这份列表同时是墙上的格子与弹窗里的六个按钮（ADR-0011）
   try {
     await window.loadSubjects();
-    window.renderSubjectOptions();
   } catch (e) {
     console.warn('科目加载失败，请检查数据库连接:', e.message);
     window.showToast('科目加载失败，请检查数据库连接', 'error');

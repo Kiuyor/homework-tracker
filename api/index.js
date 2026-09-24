@@ -7,19 +7,22 @@ const app = express();
 
 // ============ 输入校验常量与辅助 ============
 const MAX_CONTENT_LEN = 5000;
-const MAX_SUBJECT_NAME_LEN = 50;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DEADLINE_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+
+// 主科优先表（ADR-0006）：墙上的先后是写死的常量，不是可拖出来的顺序，也不是可编辑
+// 数据——所以不启用 subjects.sort_order。名单本身在 db.js（它同时是启动时补齐六格的
+// 那份清单，也是科目全集——ADR-0011），这里只引用不复制：两份副本一旦漂移，
+// 墙上顺序与作业顺序会静默不一致。
+// 不在表上的科目一律落在 ELSE 那一档，再按 subjects.id（建立先后）追加在表尾——
+// ADR-0011 关掉的是"建"，这条读法留给历史数据。
+const SUBJECT_PRIORITY = db.SUBJECT_PRIORITY;
 
 // 科目必选（ADR-0005）：既没给 id 也没给名字 = 拒绝，没有"归到一个无科目分组"这条路。
 // POST 与 PUT、"不填" 与 "显式 null" 四条路共用这一句——它们本质是同一个问题。
 const SUBJECT_REQUIRED = '作业必须属于一个科目';
-
-// 主科优先表（ADR-0006）：墙上的先后是写死的常量，不是可拖出来的顺序，也不是可编辑
-// 数据——所以不启用 subjects.sort_order。名单本身在 db.js（它同时是启动时补齐六格的
-// 那份清单），这里只引用不复制：两份副本一旦漂移，墙上顺序与作业顺序会静默不一致。
-// 不在表上的科目一律落在 ELSE 那一档，再按 subjects.id（建立先后）追加在表尾。
-const SUBJECT_PRIORITY = db.SUBJECT_PRIORITY;
+// 六科闭集（ADR-0011）：名单取自那唯一的一份，文案不在这里再抄一遍六个名字。
+const SUBJECT_CLOSED = '科目只有这六科：' + SUBJECT_PRIORITY.join('、');
 
 // 用占位符而不是把科目名拼进 SQL：常量表将来若从配置读入，不会变成注入面。
 function priorityOrderSql(col) {
@@ -29,9 +32,9 @@ function priorityOrderSql(col) {
 }
 
 
-// 科目是开放集：下拉里选到的是 id，直接敲进来的是 name。
-// 同一个事务里先 upsert 再写作业——name 上有 UNIQUE，INSERT OR IGNORE 天然幂等，
-// 「政治」录两次只会多出一条作业，不会多出一个分组、也不会多一行科目。
+// 科目闭集（ADR-0011）：弹窗里点到的是一段选择器给出的 id，`subject_name` 退化为
+// 纯 API 客户端入口，且**不再建科**——名字不在这六科上就是 400，以前是 INSERT OR IGNORE
+// 再回查。表外科目只剩历史数据一种来源，所以按 id 改挂仍然放行（那是数据不是新建）。
 // 返回 { id } 或 { error }：两者同时给且矛盾时不静默取其一，报错让人回来改。
 function resolveSubject(d, subjectId, subjectName) {
   const hasId = subjectId !== undefined && subjectId !== null && subjectId !== '';
@@ -51,12 +54,10 @@ function resolveSubject(d, subjectId, subjectName) {
     return row ? { id: row.id } : { error: '所选科目不存在' };
   }
   if (hasName) {
-    if (raw.length > MAX_SUBJECT_NAME_LEN) {
-      return { error: '科目名称不能超过' + MAX_SUBJECT_NAME_LEN + '字' };
-    }
-    d.prepare('INSERT OR IGNORE INTO subjects (name) VALUES (?)').run(raw);
+    if (!SUBJECT_PRIORITY.includes(raw)) return { error: SUBJECT_CLOSED };
     const row = d.prepare('SELECT id FROM subjects WHERE name = ?').get(raw);
-    return { id: row.id };
+    // 名字在表上但库里没这一行 = 启动时补齐没跑到，不是用户填错了
+    return row ? { id: row.id } : { error: '科目「' + raw + '」尚未就绪，请重启服务' };
   }
   return { error: SUBJECT_REQUIRED };
 }
@@ -198,8 +199,8 @@ app.post('/api/homeworks', (req, res) => {
       return res.status(400).json({ success: false, error: '作业内容不能超过5000字' });
     }
 
-    // 科目在这里定稿：可能新建一行 subject，所以与写作业同处一个事务。
-    // 校验失败用带标记的异常冒泡——事务自动回滚，新科目不会留下半条。
+    // 科目在这里定稿。它不再可能新建一行 subject（ADR-0011），但仍与写作业同处一个事务：
+    // 校验失败用带标记的异常冒泡，这条写法不需要为"半个科目"负责，只需要为"半条作业"负责。
     const insertHomework = db.transaction((d, subjId, subjName, content, date, deadline) => {
       const subj = resolveSubject(d, subjId, subjName);
       if (subj.error) {
@@ -216,8 +217,7 @@ app.post('/api/homeworks', (req, res) => {
         ).run(subj.id, content, date, deadline || null);
       } catch (err) {
         if (isUniqueConflict(err)) {
-          // 科目名要在事务里读：subject_name 这条路可能刚 upsert 出一行新科目，
-          // 出了事务它就被回滚掉了，事后再查会查个空。
+          // 科目名在事务里读：出事务后作业已回滚，这里点名要用的那一行必须还看得见
           const row = d.prepare('SELECT name FROM subjects WHERE id = ?').get(subj.id);
           err.conflict = { date, subjectName: row ? row.name : '该科目' };
         }
@@ -308,9 +308,9 @@ app.put('/api/homeworks/:id', (req, res) => {
       }
     }
     if (subject_id !== undefined || subject_name !== undefined) {
-      // 与 POST 同一条解析：可以选已有科目，也可以敲新名自动建科。
-      // 自动建科单独成事务（建到一半也不会留下半个科目），但不与下面的 UPDATE 同事务：
-      // 万一 UPDATE 失败，多出来的只是一行没人引用的科目，下次录同名时被 UNIQUE 复用。
+      // 与 POST 同一条解析：只认已有科目，敲新名不再建科（ADR-0011）。
+      // 包一层事务只为拿到 better-sqlite3 的句柄（resolveSubject 按 id/name 各查一次），
+      // 它现在只读不写，回滚与否都一样。
       // 把科目清空又不给名字 → resolveSubject 认成"没填科目"，与 POST 同一条 400。
       const resolveInTx = db.transaction((d) => resolveSubject(d, subject_id, subject_name));
       const r = resolveInTx();

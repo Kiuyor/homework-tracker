@@ -18,10 +18,11 @@ window.api = async function (method, path, body) {
 };
 
 // 渲染签名：只有「影响显示的输入」全部相同，才允许跳过重渲染。
-// 必须包含 date / viewMode / filterSubjectId —— 切换日期、切换展示模式、
-// 切换科目筛选都会经过 loadHomeworks，漏掉任何一项都会造成「该重渲染却跳过」。
+// 必须包含 date / viewMode —— 切换日期、切换展示模式都会经过 loadHomeworks，
+// 漏掉任何一项都会造成「该重渲染却跳过」。
+// （原先还有第三段 filterSubjectId，随科目筛选一起删掉了。）
 function renderSignature(date, state, list) {
-  var parts = [date, state.viewMode, String(state.filterSubjectId == null ? '' : state.filterSubjectId)];
+  var parts = [date, state.viewMode];
   var subs = state.subjects || [];
   for (var i = 0; i < subs.length; i++) parts.push(subs[i].id + ':' + subs[i].name);
   parts.push('|');

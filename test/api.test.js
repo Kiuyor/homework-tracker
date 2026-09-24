@@ -194,12 +194,20 @@ test('故事8 GET 顺序 = 主科优先表，与录入顺序解耦', async () =>
   assert.deepEqual(await namesOn(D), MAIN_SIX);
 });
 
+// 表外科目自 ADR-0011 起再也"录"不出来——名字路径已被后端拒收。它剩下的唯一来源是
+// 历史数据 / 数据修复，所以这一条改用 SQL 直插，走的正是运维会走的那条路。
+function seedSubject(name) {
+  db.run('INSERT INTO subjects (name) VALUES (?)', name);
+  return db.get('SELECT id FROM subjects WHERE name = ?', name);
+}
+
 test('故事27 表外科目追加在六主科之后，按建立先后排', async () => {
   const D = '2026-07-02';
   // 表外科目先建：历史（先）→ 政治（后）；主科故意最后才录
-  for (const name of ['历史', '政治']) {
+  const extra = [seedSubject('历史'), seedSubject('政治')];
+  for (const s of extra) {
     assert.equal((await req('POST', '/api/homeworks', {
-      content: '表外测试', date: D, subject_name: name,
+      content: '表外测试', date: D, subject_id: s.id,
     })).status, 201);
   }
   for (const id of [3, 1]) {
@@ -359,64 +367,64 @@ test('09 死线留空落库为 null，PUT 传 null 能把已有死线清掉', as
   assert.equal(db.get('SELECT deadline FROM homeworks WHERE id = ?', hw.id).deadline, null);
 });
 
-// ============ 10：科目是开放集，敲新名自动建科 ============
-// 六科种子只是起点，不是上限。全站没有科目管理页，所以「建科」这件事
-// 只能寄生在录作业这一步上——同一条 HTTP 接缝，同临时库，无需新基座。
+// ============ 11：科目是六科闭集，敲新名不再建科（ADR-0011，推翻 ADR-0004） ============
+// 这一节是原 test 10「开放集 / 自动建科」那一批的反向版：原来每条都在证明
+// "新名字能长出一行科目"，现在每条都要证明"长不出来"，同时把仍然有效的能力
+// （按名查已有科目、trim、id 与 name 矛盾要报出来）逐条留住——收的是写入口，不是整个 name 参数。
+// 同一条 HTTP 接缝，同临时库，无需新基座。
 
 async function subjectRows(name) {
   return db.all('SELECT id, name FROM subjects WHERE name = ?', name);
 }
+function subjectCount() {
+  return db.get('SELECT COUNT(*) AS n FROM subjects').n;
+}
 
-test('10 POST 只给 subject_name → 自动建科并挂到该科目下', async () => {
+test('11 POST 只给表外的 subject_name → 400，且一行科目都不许多出来', async () => {
+  const before = subjectCount();
+  // 用「体育」而不是「政治」：政治是上面 故事27 用 SQL 直插出来的表外科目，那正是它该有的样子
   const res = await req('POST', '/api/homeworks', {
-    content: '第一课课后练习', date: '2026-06-01', subject_name: '政治',
+    content: '第一课课后练习', date: '2026-06-01', subject_name: '体育',
+  });
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /只有这六科/);
+  assert.equal(subjectCount(), before, '被拒的名字不许留下半行科目——这正是以前 upsert 的漏口');
+  assert.equal((await subjectRows('体育')).length, 0);
+});
+
+test('11 POST 给六科之一的 subject_name → 仍然可用，挂到那已有的一行上', async () => {
+  const yw = (await subjectRows('语文'))[0];
+  const res = await req('POST', '/api/homeworks', {
+    content: '闭集内的名字', date: '2026-06-01', subject_name: '语文',
   });
   assert.equal(res.status, 201);
   const hw = (await res.json()).data;
-  assert.equal(hw.subject_name, '政治');
-  assert.ok(hw.subject_id > 0);
-  assert.equal((await subjectRows('政治')).length, 1);
+  assert.equal(hw.subject_id, yw.id, '同名科目必须复用同一行');
+  assert.equal((await subjectRows('语文')).length, 1, '名字路径不再可能建出第二行');
 });
 
-test('10 再录一条同名科目 → 不多出科目；换日期可再录，同日期已被 019 拦住', async () => {
-  const first = (await subjectRows('政治'))[0];
-
-  // 换一天：同名必须复用同一行科目，而不是又建一个「政治」分组。
-  const another = await req('POST', '/api/homeworks', {
-    content: '第二课课后练习', date: '2026-06-07', subject_name: '政治',
-  });
-  assert.equal(another.status, 201);
-  const hw = (await another.json()).data;
-  assert.equal(hw.subject_id, first.id, '同名科目必须复用同一行');
-  assert.equal((await subjectRows('政治')).length, 1);
-
-  // 同一天再来一条同名的：019 的唯一索引拦下，且拦的时候也不会顺手多建一行科目。
-  const dup = await req('POST', '/api/homeworks', {
-    content: '同日第二条', date: '2026-06-01', subject_name: '政治',
-  });
-  assert.equal(dup.status, 409);
-  assert.equal((await subjectRows('政治')).length, 1, '409 之后也不该多出一行科目');
-
-  const list = (await (await req('GET', '/api/homeworks?date=2026-06-01')).json()).data;
-  assert.equal(list.filter((h) => h.subject_id === first.id).length, 1,
-    '一科一条之后「两条同组」这个形状不再存在');
-});
-
-test('10 新科目出现在 GET /api/subjects 里（下拉不用刷新页面就能看到）', async () => {
+test('11 建科路径已封死：表外科目只剩 SQL 直插的那两行', async () => {
   const list = (await (await req('GET', '/api/subjects')).json()).data;
-  assert.ok(list.some((s) => s.name === '政治'));
+  // 表外那两行是上面的用例用 SQL 种的（历史数据兜底），不是录出来的；
+  // 这条断言真正守的是：跑完这一整节写入之后，表里没有第三行表外科目。
+  const extras = list.filter((s) => !MAIN_SIX.includes(s.name));
+  assert.deepEqual(extras.map((s) => s.name), ['历史', '政治'],
+    '表外科目只可能来自 SQL 直插；出现别的名字说明建科路径又漏了');
 });
 
-test('10 科目名两端空白被吃掉，" 政治 " 不另起一个科目', async () => {
+test('11 科目名两端空白仍被吃掉，"  语文  " 不落新行', async () => {
+  const before = subjectCount();
+  const yw = (await subjectRows('语文'))[0];
   const res = await req('POST', '/api/homeworks', {
-    content: '带空白的同名', date: '2026-06-02', subject_name: '  政治  ',
+    content: '带空白的同名', date: '2026-06-02', subject_name: '  语文  ',
   });
   assert.equal(res.status, 201);
-  assert.equal((await res.json()).data.subject_name, '政治');
-  assert.equal((await subjectRows('政治')).length, 1);
+  assert.equal((await res.json()).data.subject_name, '语文');
+  assert.equal((await subjectRows('语文'))[0].id, yw.id, 'trim 之后必须落回同一行');
+  assert.equal(subjectCount(), before, '不另起一行科目');
 });
 
-test('10 subject_id 与 subject_name 两者皆缺 → 400', async () => {
+test('11 subject_id 与 subject_name 两者皆缺 → 400', async () => {
   const res = await req('POST', '/api/homeworks', { content: '没科目', date: '2026-06-03' });
   assert.equal(res.status, 400);
   assert.match((await res.json()).error, /必须属于一个科目/);
@@ -432,50 +440,67 @@ test('21 POST 显式 subject_id:null 且无名字 → 400（与 PUT 同一条路
     '被拒的写入不能留下任何一行，包括 subject_id 为 NULL 的');
 });
 
-test('10 两者同时给且矛盾 → 400，不静默取其一', async () => {
-  const zg = (await subjectRows('政治'))[0];
+test('11 两者同时给且矛盾 → 400，不静默取其一', async () => {
+  const before = subjectCount();
   const res = await req('POST', '/api/homeworks', {
-    content: '矛盾', date: '2026-06-03', subject_id: 1, subject_name: '政治',
+    content: '矛盾', date: '2026-06-09', subject_id: 1, subject_name: '数学',
   });
   assert.equal(res.status, 400);
   assert.match((await res.json()).error, /subject_id|subject_name/);
-  // 矛盾请求被整条拒掉：既没写作业，也没顺手把「政治」改名或再建一行
-  assert.equal((await subjectRows('政治')).length, 1);
-  assert.equal((await subjectRows('政治'))[0].id, zg.id);
+  assert.equal(subjectCount(), before, '矛盾请求被整条拒掉：既不写作业，也不碰科目表');
+  assert.equal(db.get("SELECT COUNT(*) AS n FROM homeworks WHERE date = '2026-06-09'").n, 0);
 });
 
-test('10 两者同时给且指向同一科目 → 放行', async () => {
-  const zg = (await subjectRows('政治'))[0];
+test('11 两者同时给且指向同一科目 → 放行', async () => {
+  const yw = (await subjectRows('语文'))[0];
   const res = await req('POST', '/api/homeworks', {
-    content: '一致', date: '2026-06-03', subject_id: zg.id, subject_name: '政治',
+    content: '一致', date: '2026-06-10', subject_id: yw.id, subject_name: '语文',
   });
   assert.equal(res.status, 201);
-  assert.equal((await res.json()).data.subject_id, zg.id);
+  assert.equal((await res.json()).data.subject_id, yw.id);
 });
 
-test('10 科目名超长 → 400', async () => {
+test('11 表外科目按 id 仍可写入（ADR-0011 第 6 条：关的是"建"，留的是"读"）', async () => {
+  const ls = (await subjectRows('历史'))[0];
+  const res = await req('POST', '/api/homeworks', {
+    content: '历史数据补一条', date: '2026-06-11', subject_id: ls.id,
+  });
+  assert.equal(res.status, 201);
+  assert.equal((await res.json()).data.subject_name, '历史');
+});
+
+test('11 科目名再长也建不出科（原「超长 → 400」的长度闸门已被闭集取代）', async () => {
+  const before = subjectCount();
   const res = await req('POST', '/api/homeworks', {
     content: '长名', date: '2026-06-04', subject_name: '科'.repeat(51),
   });
   assert.equal(res.status, 400);
-  assert.match((await res.json()).error, /科目/);
+  assert.match((await res.json()).error, /只有这六科/);
+  assert.equal(subjectCount(), before);
 });
 
-test('10 PUT 改成新科目名 → 同样自动建科并改挂', async () => {
+test('11 PUT 改成表外科目名 → 400 且原科目原样保留', async () => {
   const hw = await createHomework({ date: '2026-06-05' });
   const res = await req('PUT', `/api/homeworks/${hw.id}`, { subject_name: '地理' });
+  assert.equal(res.status, 400);
+  const row = db.get('SELECT subject_id FROM homeworks WHERE id = ?', hw.id);
+  assert.equal(row.subject_id, hw.subject_id, '被拒的改挂不许留下半改的条目');
+  assert.equal((await subjectRows('地理')).length, 0);
+});
+
+test('11 PUT 改成六科之一 → 正常改挂', async () => {
+  const hw = await createHomework({ date: '2026-06-12' });
+  const res = await req('PUT', `/api/homeworks/${hw.id}`, { subject_name: '英语' });
   assert.equal(res.status, 200);
-  const data = (await res.json()).data;
-  assert.equal(data.subject_name, '地理');
-  assert.equal((await subjectRows('地理')).length, 1);
+  assert.equal((await res.json()).data.subject_name, '英语');
 });
 
 test('21 PUT 显式清空科目 → 400（「其他」这条路连同分组一起废除）', async () => {
   const created = await req('POST', '/api/homeworks', {
-    content: '不许改成没科目', date: '2026-06-06', subject_name: '历史',
+    content: '不许改成没科目', date: '2026-06-06', subject_id: 2,
   });
   const hw = (await created.json()).data;
-  assert.equal(hw.subject_name, '历史');
+  assert.equal(hw.subject_name, '数学');
 
   const res = await req('PUT', `/api/homeworks/${hw.id}`, { subject_id: null });
   assert.equal(res.status, 400);
@@ -484,6 +509,20 @@ test('21 PUT 显式清空科目 → 400（「其他」这条路连同分组一�
   const row = db.get('SELECT subject_id, content FROM homeworks WHERE id = ?', hw.id);
   assert.equal(row.subject_id, hw.subject_id);
   assert.equal(row.content, '不许改成没科目');
+});
+
+// ADR-0011 的机器化：写入口关掉这件事不能只靠人记得。db.js 的 seedSubjects() 是唯一
+// 豁免——它只写那六个名字，且是"补齐"而不是"新建能力"。
+test('11 源码级：除 db.js 的种子外，没有任何路径往 subjects 插名字', () => {
+  const root = path.join(__dirname, '..');
+  const offenders = [];
+  for (const f of ['api/index.js', 'server.js', 'public/js/main.js', 'public/js/ui.js']) {
+    const src = fs.readFileSync(path.join(root, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    if (/INSERT(\s+OR\s+\w+)?\s+INTO\s+subjects/i.test(src)) offenders.push(f);
+  }
+  assert.deepEqual(offenders, [], '这些文件又学会了建科');
+  // 反向：db.js 里那份种子必须还在，否则六格常驻的保证就没了
+  assert.match(fs.readFileSync(path.join(root, 'db.js'), 'utf8'), /INSERT OR IGNORE INTO subjects/);
 });
 
 // ============ 19：(date, subject_id) 唯一索引 —— 一科一条是数据库级真约束（ADR-0005） ============

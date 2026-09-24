@@ -4,13 +4,13 @@ window.AppState = {
   homeworks: [],
   subjects: [],
   editingId: null,
-  subjectConvertedId: null, // editingId 是由「添加」里选科目转出来的（换科目时要退回新建）
+  subjectPickId: null, // 科目选择器当前选中的科目（ADR-0011：只有六科，点不出来新名字）
   editingDeadline: null, // 编辑中的作业原始 deadline，用于「只改时间不改日期」
   deadlineOwnerDate: null, // 「当天/次日」的基准日 = 正在编辑条目的所属日（新建时为查看日）
   deadlineDayOffset: 0, // 0=当天 1=次日 null=原始 deadline 落在两档之外
   fontSize: 44,
-  filterSubjectId: null,
   viewMode: 'show', // 'edit' | 'show'，默认展示态（ADR-0003：编辑是显式进入的临时态）
+  theme: 'whiteboard', // 主题轴当前档（ADR-0012），与 viewMode / dark-mode 两把 class 互不相干
   refreshTimer: null,
   clockTimer: null,
   editIdleTimer: null,   // 编辑态闲置回弹，独立句柄（不与轮询/时钟共用）

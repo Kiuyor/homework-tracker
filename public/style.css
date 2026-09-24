@@ -1,6 +1,9 @@
 /* ============================================================
-   作业墙 · 白板风
+   作业墙 · 默认主题「白板风」的骨相
    骨相: 白板上只有文字。无卡片、无投影、无装饰。
+   ——这行从 ADR-0012 起**只对默认主题成立**。下面每个 body.theme-* 块各有一套骨相，
+   但主题只活在 token 层（颜色 / 圆角 / 材质 / 字重）：DOM 结构、网格、断点与
+   展示态那组 --show-* 跨主题唯一，谁都不许按主题分叉。
    编辑模式: 科代表录入。
    展示模式: 学生观看，自动刷新。
    ============================================================ */
@@ -21,6 +24,26 @@ svg {
 }
 button svg { pointer-events: none; }
 
+/* 焦点环全站统一（ADR-0009）：动作色 2px，只给键盘焦点（:focus-visible），
+   点按不出现环。原来这里没有统一规则，只有两条各自为政的控件级覆写，
+   其余按钮全凭浏览器默认环——而表单字段里那句 outline:none 干脆把环抹掉了。
+   :where() 把特异性压到 0，个别控件需要微调时可直接在组件规则里覆盖。 */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: var(--sp-1);
+}
+
+/* 拉丁语境专用（spec §3.4）：只含数字与拉丁字符、不含汉字的文本——
+   时钟 14:30、44px、100%、A−/A+ 四处。中英混排串（"次日 18:00"）一律不吃它，
+   否则一串里两种字。OFL 1.1 授权，随字体分发，绿色版仍是本地文件。 */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('fonts/ibm-plex-sans-600-latin.woff2') format('woff2');
+}
+
 :root {
   --bg: #ffffff;
   --surface: #ffffff;
@@ -28,33 +51,62 @@ button svg { pointer-events: none; }
   --ink-dim: #6f6f6f;
   --ink-faint: #b8b8b8;
   --line: #e8e8e8;
-  --accent: #111111;
 
-  /* 科目色池：白底对比度 ≥4:1（投影/白板后排可辨识）；由 JS 按科目序号引用 --c-sN */
+  /* 动作色（ADR-0009）：只出现在可被按的东西上——按钮、选中态、焦点环。
+     科目名 / 正文 / 截止时间等内容区永远不用它。白底 8.61:1，实算见 spec §3.1。
+     它与数学蓝只差 16°，这是刻意接受的：动作在控件、科目色在内容，不同屏同角色。 */
+  --accent: #263cba;
+  --accent-strong: #1c2c8a;   /* accent 底上的 hover/pressed */
+  --on-accent: #ffffff;       /* accent 底上的前景 */
+  --on-ink: #ffffff;          /* 墨底上的前景 */
+
+  /* 语义色脱离科目色池：现状是「错误」直接借用语文红、「离线」借用化学橙，
+     同一块颜色既表示一门课又表示一种状态。s8 重排腾出琥珀，正好转作 --warn。 */
+  --success: #1d7a3f;
+  --danger: #b42318;
+  --warn: #b45309;
+
+  /* 科目色池：白底对比度 ≥4:1（投影/白板后排可辨识）；由 JS 按科目序号引用 --c-sN。
+     s1-s6 = 六主科，锁死（含暗色档），本轮一字未改。
+     s7-s12 = 表外科目，色相取六主科之间最宽的空档，与最近主科 ≥20°（spec §5）。 */
   --c-s1: #cf3227;
   --c-s2: #2f6fd0;
   --c-s3: #c23a8b;
   --c-s4: #0d8574;
   --c-s5: #c2410c;
   --c-s6: #2f8a2e;
-  --c-s7: #7c3aed;
-  --c-s8: #b45309;
-  --c-s9: #db2777;
-  --c-s10: #0e7490;
-  --c-s11: #4d7c0f;
-  --c-s12: #a21caf;
-  /* 语义别名 */
-  --c-yu: var(--c-s1);
-  --c-shu: var(--c-s2);
-  --c-ying: var(--c-s3);
-  --c-wu: var(--c-s4);
-  --c-hua: var(--c-s5);
-  --c-sheng: var(--c-s6);
+  --c-s7: #9a7913;
+  --c-s8: #4d8811;
+  --c-s9: #129147;
+  --c-s10: #1484a3;
+  --c-s11: #6b18bf;
+  --c-s12: #b618bf;
 
-  --space-sm: 12px;
-  --space-md: 20px;
-  --space-lg: 32px;
-  --radius-md: 10px;
+  /* 原先这里还有六行 --c-yu: var(--c-s1) 之类的语义别名，主题化轮删掉了，理由记在
+     门禁 §7(a)-7e 那条反向断言里：别名只在 html 上声明，var() 在 html 的
+     computed-value time 就代完了，挂在 body 上的主题块追不动它们。 */
+
+  /* 间距阶梯：4 的倍数，2px 一档留给图标级缝隙。
+     吸附三规则——① 取最近档；② 等距时上取；③ 可点击元素的命中区只增不减。 */
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 8px;
+  --sp-4: 12px;
+  --sp-5: 16px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 48px;
+  --sp-9: 64px;
+
+  /* 圆角：30px 胶囊在 25-48px 高的元素上会被夹成半高，与 --r-pill 逐像素相同，
+     所以这条收敛零视觉变化，只是清掉魔法数字。 */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+  --r-full: 50%;
+
+  --font-latin: 'IBM Plex Sans', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-fast: 150ms;
 }
@@ -62,7 +114,9 @@ button svg { pointer-events: none; }
 html { height: 100%; }
 
 body {
-  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  /* 首位曾是 'Noto Sans SC'，但为守绿色版免联网已移除网络字体，
+     教室机上永远取不到它——留着等于白写一级回落。 */
+  font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   background: var(--bg);
   color: var(--ink);
   min-height: 100%;
@@ -79,16 +133,15 @@ body {
   top: 0;
   z-index: 100;
   background: var(--bg);
-  border-bottom: 2px solid var(--ink);
 }
 
 .topbar-inner {
   width: 100%;
-  padding: 16px 40px;
+  padding: var(--sp-5) var(--sp-8);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-md);
+  gap: var(--sp-6);
   flex-wrap: wrap;
 }
 
@@ -99,23 +152,19 @@ body {
   white-space: nowrap;
 }
 
-/* 日期导航 */
+/* 日期导航：工具行里的一个组，独占一行的事交给 .tool-row */
 .date-nav {
   display: flex;
   align-items: center;
-  gap: 2px;
-  order: 3;
-  width: 100%;
-  justify-content: center;
-  margin-top: 6px;
+  gap: var(--sp-1);
 }
 .date-btn {
   background: none;
   border: none;
   color: var(--ink-faint);
-  padding: 6px;
-  width: 36px;
-  height: 36px;
+  padding: var(--sp-3);
+  width: 44px;      /* 原 36×36，低于触控下限（016 遗留，spec §6） */
+  height: 44px;
   cursor: pointer;
   transition: color var(--dur-fast) var(--ease-out);
   display: flex;
@@ -123,11 +172,11 @@ body {
   justify-content: center;
 }
 .date-btn svg { width: 20px; height: 20px; }
-.date-btn:hover { color: var(--ink); }
+.date-btn:hover { color: var(--accent); }
 .date-display {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-4);
   font-size: 14px;
   color: var(--ink-dim);
   letter-spacing: 0.05em;
@@ -136,61 +185,61 @@ body {
 .today-btn {
   background: none;
   border: 1px solid var(--ink-faint);
-  border-radius: 30px;
+  border-radius: var(--r-pill);
   color: var(--ink-dim);
   font-size: 12px;
-  padding: 3px 14px;
-  margin-left: 6px;
+  padding: var(--sp-2) var(--sp-5);
+  min-height: 44px;   /* 原 54×25：靠 min-height 顶到下限，视觉尺寸不缩 */
+  margin-left: var(--sp-3);
   cursor: pointer;
   transition: all var(--dur-fast) var(--ease-out);
 }
-.today-btn:hover { border-color: var(--ink); color: var(--ink); }
+.today-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* 操作 */
 .top-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-4);
 }
 .mode-toggle {
   background: none;
-  border: 1.5px solid var(--ink);
-  border-radius: 30px;
-  color: var(--ink);
+  border: 1.5px solid var(--accent);
+  border-radius: var(--r-pill);
+  color: var(--accent);
   font-size: 14px;
   font-weight: 500;
-  padding: 9px 22px;
+  padding: var(--sp-3) var(--sp-6);
   height: 44px;
   cursor: pointer;
   transition: all var(--dur-fast) var(--ease-out);
 }
-.mode-toggle:hover { background: var(--ink); color: #fff; }
-.mode-toggle.active { background: var(--ink); color: #fff; }
+.mode-toggle:hover, .mode-toggle.active { background: var(--accent); color: var(--on-accent); }
 
 /* 主操作按钮 */
 .add-btn {
-  background: var(--ink);
-  border: 1.5px solid var(--ink);
-  border-radius: 30px;
-  color: #fff;
+  background: var(--accent);
+  border: 1.5px solid var(--accent);
+  border-radius: var(--r-pill);
+  color: var(--on-accent);
   font-size: 16px;
   font-weight: 700;
-  padding: 0 30px;
+  padding: 0 var(--sp-7);
   height: 44px;
   cursor: pointer;
   transition: all var(--dur-fast) var(--ease-out);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
 }
 .add-btn svg { width: 18px; height: 18px; }
-.add-btn:hover { background: #333; }
+.add-btn:hover { background: var(--accent-strong); }
 
 /* 收起顶栏按钮 */
 .collapse-btn {
   background: none;
   border: 1.5px solid var(--ink-faint);
-  border-radius: 30px;
+  border-radius: var(--r-pill);
   color: var(--ink-dim);
   width: 44px;
   height: 44px;
@@ -201,131 +250,151 @@ body {
   justify-content: center;
 }
 .collapse-btn svg { width: 18px; height: 18px; }
-.collapse-btn:hover { border-color: var(--ink); color: var(--ink); }
+.collapse-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* 顶栏收起态 */
 body.topbar-hidden .topbar { display: none; }
-body.topbar-hidden .main { padding-top: 18px; }
+body.topbar-hidden .main { padding-top: var(--sp-5); }
 
 /* 展开条 */
 .expand-bar {
   position: fixed;
-  top: 16px;
+  top: var(--sp-5);
   left: 50%;
   transform: translateX(-50%);
   z-index: 120;
-  background: var(--ink);
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
   border: none;
-  border-radius: 30px;
+  border-radius: var(--r-pill);
   font-size: 14px;
   font-weight: 600;
-  padding: 10px 26px;
+  padding: var(--sp-4) var(--sp-6);
   cursor: pointer;
   box-shadow: 0 4px 16px rgba(0,0,0,0.25);
   transition: all var(--dur-fast) var(--ease-out);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
 }
 .expand-bar svg { width: 16px; height: 16px; }
-.expand-bar:hover { background: #333; transform: translateX(-50%) translateY(2px); }
+.expand-bar:hover { background: var(--accent-strong); transform: translateX(-50%) translateY(2px); }
 .expand-bar.hidden { display: none; }
 
 /* ============================================================
-   管理模式扩展条
+   工具行：日期 · 字号 · 暗色（顶栏第二行，整组居中）
+   —— ADR-0010：原先这条在顶栏之外自成一条 .manage-bar，
+      科目筛选删除后它只剩两个小控件，不值一整行，于是并了进来。
    ============================================================ */
-.manage-bar {
+.tool-row {
+  order: 3;
   width: 100%;
-  padding: 12px 40px 16px;
+  margin-top: var(--sp-3);
   display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: center;
+  gap: var(--sp-6);
   flex-wrap: wrap;
-  border-bottom: 1px solid var(--line);
-}
-.manage-bar.hidden { display: none; }
-
-.manage-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.manage-divider {
-  width: 1px;
-  height: 24px;
-  background: var(--line);
-  flex: none;
 }
 
 .tool-btn {
   background: none;
   border: 1px solid var(--line);
-  border-radius: 30px;
+  border-radius: var(--r-pill);
   color: var(--ink-dim);
   font-size: 13px;
-  padding: 7px 16px;
-  height: 34px;
+  padding: var(--sp-3) var(--sp-5);
+  min-height: 44px;   /* 原 height:34px —— #darkmodeBtn 实测 43×34（016 遗留） */
   cursor: pointer;
   transition: all var(--dur-fast) var(--ease-out);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
 }
 .tool-btn svg { width: 15px; height: 15px; }
-.tool-btn.icon-only { padding: 0 12px; }
+.tool-btn.icon-only { padding: 0 var(--sp-4); min-width: 44px; justify-content: center; }
 .tool-btn.icon-only svg { width: 17px; height: 17px; }
-.tool-btn:hover { border-color: var(--ink); color: var(--ink); }
-.tool-btn.active { border-color: var(--ink); color: var(--ink); font-weight: 600; }
-
-.subject-filter {
-  font-family: inherit;
-  font-size: 13px;
-  border: 1px solid var(--line);
-  border-radius: 30px;
-  padding: 7px 30px 7px 14px;
-  color: var(--ink-dim);
-  background: var(--bg);
-  appearance: none;
-  -webkit-appearance: none;
-  cursor: pointer;
-}
-.subject-filter:hover { border-color: var(--ink); color: var(--ink); }
-.subject-filter:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+.tool-btn.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 
 .font-wrap {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-3);
   font-size: 13px;
   color: var(--ink-dim);
 }
+/* 主题入口（ADR-0013）：工具行只常驻 #themeBtn 一颗钮，选项装在它底下的弹层里。
+   换成按钮的理由是宽度账不是观感——常驻段钮的宽度按名单长度付（实测二档那颗条约 176px，
+   四档模拟约 300px），一颗钮无论几档都是 98~116px。弹层挂在入口下面，随顶栏一起隐藏，
+   所以它不是 .rivet.md:16 禁的那"第三条工具条"。 */
+.theme-entry { position: relative; }
+.theme-pop {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: var(--sp-2);
+  z-index: 5;
+  /* 菜单至少和入口一样宽（实测入口 98 / 菜单 88 时，两者看着不像同一个控件）。
+     写在定位盒上而不是 .seg 上：百分比 min-width 要拿 .theme-entry 当参照才算得出，
+     挂在 .seg 上时参照变成了这个 shrink-to-fit 盒自己，等于没写。 */
+  min-width: 100%;
+}
+/* 本站没有全局 .hidden——每个浮层自己声明一条（.modal-overlay / .toast / .expand-bar 都是）。
+   少这一条，弹层刷新就是一条常驻选项条，上面那句宽度账整笔作废。 */
+.theme-pop.hidden { display: none; }
+/* 投影落在 .seg 那个看得见的盒子上，不落在外层定位盒上（外层没有底色）。
+   与 .modal / .toast / .expand-bar 同一手法。
+   竖排是因为横排四档要 300px 宽；.seg 的分隔线本来是横排设计的 border-left，
+   竖排下它会变成每项左边一条孤线，所以换成 border-top。 */
+.theme-pop .seg {
+  flex-direction: column;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.theme-pop .seg-opt + .seg-opt { border-left: none; border-top: 1px solid var(--line); }
+/* 段钮外观仍复用 .seg/.seg-opt，按钮由 ui.js 的 THEME_NAMES 生成，HTML 里不抄名单。
+   命中区写死 48×44 而不是继承 .seg-opt 的 var(--sp-8)：门禁 §7(a)-6 用 parseFloat 取值，
+   函数式的那一份读不出数——写死才是要验的那一条。实测（真页面，非源码推算）：
+   弹层里每一项 96×48（二档）/ 114×48（四档模拟），与这条 CSS 值对得上。 */
+.theme-seg .seg-opt {
+  min-height: 48px;
+  min-width: 44px;
+}
+/* 原状是 input 本体 90×3 —— 命中区只有三像素高。改成 input 高 44px、
+   轨道由 ::-webkit-slider-runnable-track 画回 3px：视觉一模一样，手指能按到了。
+   该伪元素是 blink/webkit 专有，与原实现一致（原来也只有 -webkit-slider-thumb）。 */
 #fontSizeSlider {
   width: 90px;
-  height: 3px;
+  height: 44px;
   -webkit-appearance: none;
   appearance: none;
-  background: var(--ink-faint);
-  border-radius: 2px;
+  background: transparent;
   cursor: pointer;
+}
+#fontSizeSlider::-webkit-slider-runnable-track {
+  height: 3px;
+  background: var(--ink-faint);
+  border-radius: var(--r-pill);
 }
 #fontSizeSlider::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 15px;
   height: 15px;
-  border-radius: 50%;
-  background: var(--ink);
+  margin-top: -6px;   /* (轨道 3px - 滑块 15px) / 2，让滑块垂直居中于轨道 */
+  border-radius: var(--r-full);
+  background: var(--accent);
   cursor: pointer;
 }
-#fontSizeLabel { min-width: 34px; text-align: right; font-weight: 500; }
+/* 拉丁语境：这里只会出现 "44px" 这类数字+拉丁 */
+#fontSizeLabel { min-width: var(--sp-7); text-align: right; font-weight: 600; font-family: var(--font-latin); }
 
 /* ============================================================
    主体 — 科目分组（一屏铺满）
    ============================================================ */
 .main {
   width: 100%;
-  padding: 40px;
+  padding: var(--sp-8);
   min-height: calc(100vh - 80px);
 }
 
@@ -333,7 +402,7 @@ body.topbar-hidden .main { padding-top: 18px; }
   width: 100%;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 40px 60px;
+  gap: var(--sp-8) var(--sp-9);
   align-items: start;
 }
 
@@ -347,10 +416,10 @@ body.topbar-hidden .main { padding-top: 18px; }
 .subject-head {
   display: flex;
   align-items: baseline;
-  gap: 12px;
+  gap: var(--sp-4);
   border-bottom: 2px solid var(--ink);
-  padding-bottom: 10px;
-  margin-bottom: 16px;
+  padding-bottom: var(--sp-4);
+  margin-bottom: var(--sp-5);
 }
 .subject-name {
   font-size: clamp(28px, 3.5vw, 44px);
@@ -360,12 +429,12 @@ body.topbar-hidden .main { padding-top: 18px; }
 }
 
 /* 作业行 */
-.hw-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.hw-list { list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); }
 
 .hw-row {
   display: flex;
-  gap: 20px;
-  padding: 12px 0;
+  gap: var(--sp-6);
+  padding: var(--sp-4) 0;
   border-bottom: 1px solid var(--line);
   cursor: default;
   transition: opacity var(--dur-fast) var(--ease-out);
@@ -374,7 +443,7 @@ body.topbar-hidden .main { padding-top: 18px; }
 
 .hw-row .bar {
   width: 6px;
-  border-radius: 3px;
+  border-radius: var(--r-pill);
   flex: none;
   align-self: stretch;
   background: var(--subject-color);
@@ -392,12 +461,12 @@ body.topbar-hidden .main { padding-top: 18px; }
 }
 
 .hw-row .deadline {
-  margin-top: 8px;
+  margin-top: var(--sp-3);
   font-size: 20px;
   color: var(--ink-dim);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
 }
 .hw-row .deadline svg {
   width: 1.1em;
@@ -409,7 +478,7 @@ body.topbar-hidden .main { padding-top: 18px; }
 .hw-row .row-actions {
   display: none;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-2);
   flex: none;
 }
 body.manage-on .hw-row .row-actions { display: flex; }
@@ -419,9 +488,9 @@ body.manage-on .hw-row { cursor: pointer; user-select: none; }
 .row-action-btn {
   background: none;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  width: 34px;
-  height: 34px;
+  border-radius: var(--r-sm);
+  width: 44px;    /* 原 34px（触屏档 40px），仍低于触控下限 */
+  height: 44px;
   cursor: pointer;
   color: var(--ink-dim);
   transition: all var(--dur-fast) var(--ease-out);
@@ -430,13 +499,14 @@ body.manage-on .hw-row { cursor: pointer; user-select: none; }
   justify-content: center;
 }
 .row-action-btn svg { width: 17px; height: 17px; }
-.row-action-btn:hover { border-color: var(--ink); color: var(--ink); background: rgba(0,0,0,0.04); }
-.row-action-btn.del:hover { border-color: var(--c-yu); color: var(--c-yu); }
+.row-action-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(0,0,0,0.04); }
+/* 删除借用的是语义红，不再是语文红——同一块颜色不该既表示一门课又表示一种状态 */
+.row-action-btn.del:hover { border-color: var(--danger); color: var(--danger); }
 
 /* 空状态 */
 .empty-line {
   text-align: center;
-  padding: 80px 0;
+  padding: var(--sp-9) 0;
   color: var(--ink-faint);
   font-size: 17px;
   letter-spacing: 0.15em;
@@ -453,14 +523,14 @@ body.manage-on .hw-row { cursor: pointer; user-select: none; }
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  padding: 40px;
+  padding: var(--sp-8);
 }
 .modal-overlay.hidden { display: none; }
 
 .modal {
   background: var(--surface);
   border: 2px solid var(--ink);
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   width: 100%;
   max-width: 560px;
   /* 软键盘弹起会压矮动态视口：模态跟着变矮，而不是把「保存」顶出屏幕 */
@@ -474,7 +544,7 @@ body.manage-on .hw-row { cursor: pointer; user-select: none; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-lg) var(--space-lg) 0;
+  padding: var(--sp-7) var(--sp-7) 0;
 }
 .modal-header h2 { font-size: 22px; font-weight: 700; }
 .modal-close {
@@ -482,17 +552,17 @@ body.manage-on .hw-row { cursor: pointer; user-select: none; }
   border: none;
   cursor: pointer;
   color: var(--ink-faint);
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .modal-close svg { width: 20px; height: 20px; }
-.modal-close:hover { color: var(--ink); }
+.modal-close:hover { color: var(--accent); }
 
 #homeworkForm {
-  padding: var(--space-lg);
+  padding: var(--sp-7);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -504,45 +574,45 @@ body.manage-on .hw-row { cursor: pointer; user-select: none; }
   min-height: 0;
   overflow-y: auto;
 }
-.form-group { margin-bottom: var(--space-md); }
+.form-group { margin-bottom: var(--sp-6); }
 .form-group label {
   display: block;
   font-size: 13px;
   font-weight: 600;
   color: var(--ink-dim);
-  margin-bottom: 6px;
+  margin-bottom: var(--sp-3);
   letter-spacing: 0.05em;
 }
 .form-group select,
 .form-group textarea,
 .form-group input {
   width: 100%;
-  padding: 12px 14px;
+  padding: var(--sp-4) var(--sp-5);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   font-family: inherit;
   font-size: 16px;
   color: var(--ink);
   background: var(--bg);
   transition: border-color var(--dur-fast) var(--ease-out);
 }
+/* 焦点环由文件顶部的全站 :focus-visible 规则负责（ADR-0009）。这里只补边框反馈：
+   点按也要有回应，所以用 :focus 而不是 :focus-visible。
+   原先这里是一句 `outline: none`，把字段唯一的焦点提示也抹掉了。 */
 .form-group select:focus,
 .form-group textarea:focus,
-.form-group input:focus {
-  outline: none;
-  border-color: var(--ink);
-}
+.form-group input:focus { border-color: var(--accent); }
 .form-group textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
 
 /* 截止时间：段式二选（当天/次日）+ 时刻框并排。
    触控下用大号段钮而不是下拉——两档选择没必要再多一次弹层。 */
-.deadline-row { display: flex; align-items: stretch; gap: 10px; }
+.deadline-row { display: flex; align-items: stretch; gap: var(--sp-4); }
 .deadline-row input { flex: 1 1 auto; min-width: 0; }
 .seg {
   flex: none;
   display: flex;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   overflow: hidden;
   background: var(--bg);
 }
@@ -553,22 +623,53 @@ body.manage-on .hw-row { cursor: pointer; user-select: none; }
   color: var(--ink-dim);
   background: none;
   border: none;
-  padding: 0 16px;
-  min-height: 46px;
+  padding: 0 var(--sp-5);
+  min-height: var(--sp-8);
   cursor: pointer;
 }
 .seg-opt + .seg-opt { border-left: 1px solid var(--line); }
-.seg-opt.active { background: var(--ink); color: var(--surface); }
+.seg-opt.active { background: var(--accent); color: var(--on-accent); }
+
+/* 科目选择器（ADR-0011）：六科闭集的六个按钮。
+   .seg 本为「当天/次日」那种两三项、永不换行的控件设计，分隔线用 border-left；
+   六个按钮在窄屏（390px）一排放不下，换行后行首那项的左边框会变成一条孤线。
+   所以这里把分隔线换成 1px→--sp-1 的 gap 透底色：换行与否都不多一条线。
+   排成三列两行而不是"能塞几个塞几个"：形状与屏宽无关，验收只看一种形状。 */
+.seg-subject {
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  background: var(--line);
+}
+.seg-subject .seg-opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  flex: 1 1 30%;
+  min-width: 0;
+  background: var(--bg);
+}
+.seg-subject .seg-opt + .seg-opt { border-left: none; }
+/* 已录标记用圆点不用文字：六个按钮各加两字角标会撑破 560px 的弹窗。
+   点本身不承担识别职责——aria-label/title 里写了同一句话。 */
+.seg-subject .seg-opt.recorded::after {
+  content: '';
+  width: var(--sp-3);
+  height: var(--sp-3);
+  border-radius: var(--r-full);
+  background: currentColor;
+  opacity: 0.55;
+}
 .form-actions {
   flex: none;
   display: flex;
-  gap: var(--space-sm);
+  gap: var(--sp-4);
   justify-content: flex-end;
-  margin-top: var(--space-lg);
+  margin-top: var(--sp-7);
 }
 .btn-cancel, .btn-submit {
-  padding: 11px 26px;
-  border-radius: 30px;
+  padding: var(--sp-4) var(--sp-6);
+  border-radius: var(--r-pill);
   font-family: inherit;
   font-size: 15px;
   font-weight: 500;
@@ -576,35 +677,36 @@ body.manage-on .hw-row { cursor: pointer; user-select: none; }
   transition: all var(--dur-fast) var(--ease-out);
 }
 .btn-cancel { background: none; border: 1.5px solid var(--line); color: var(--ink-dim); }
-.btn-cancel:hover { border-color: var(--ink); color: var(--ink); }
-.btn-submit { background: var(--ink); border: 1.5px solid var(--ink); color: #fff; font-weight: 700; }
-.btn-submit:hover { background: #333; }
+.btn-cancel:hover { border-color: var(--accent); color: var(--accent); }
+.btn-submit { background: var(--accent); border: 1.5px solid var(--accent); color: var(--on-accent); font-weight: 700; }
+.btn-submit:hover { background: var(--accent-strong); }
 
 /* ============================================================
    Toast
    ============================================================ */
 .toast-container {
   position: fixed;
-  bottom: 28px;
-  right: 28px;
+  bottom: var(--sp-7);
+  right: var(--sp-7);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-4);
   z-index: 2000;
 }
 .toast {
   background: var(--ink);
-  color: #fff;
-  padding: 12px 22px;
-  border-radius: 30px;
+  color: var(--on-ink);
+  padding: var(--sp-4) var(--sp-6);
+  border-radius: var(--r-pill);
   font-size: 14px;
   box-shadow: 0 6px 20px rgba(0,0,0,0.2);
   animation: toastIn 0.25s var(--ease-out);
 }
-.toast.success { background: #1d7a3f; }
-.toast.error { background: var(--c-yu); }
+/* 成功/失败是语义，不是某门课：原来 .toast.error 直接借用语文红 --c-yu */
+.toast.success { background: var(--success); }
+.toast.error { background: var(--danger); }
 @keyframes toastIn {
-  from { transform: translateY(12px); opacity: 0; }
+  from { transform: translateY(var(--sp-5)); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
 
@@ -619,30 +721,104 @@ body.dark-mode {
   --ink-faint: #5a5a5a;
   --line: #2c2c2c;
 
+  /* 暗底上动作色要提亮才够对比：对 #141414 为 8.25:1（实算见 spec §3.1）。
+     hover 往更亮走——暗色里"加深"读起来像"变远"，不是"按下"。 */
+  --accent: #99a8ff;
+  --accent-strong: #b8c4ff;
+  --on-accent: #141414;
+  --on-ink: #141414;
+
+  --success: #2d9e52;
+  --danger: #ff6b5e;
+  --warn: #ffab5c;
+
+  /* s1-s6 六主科的暗色档同样锁死 */
   --c-s1: #ff7a6e;
   --c-s2: #7fb0ff;
   --c-s3: #ff8fc8;
   --c-s4: #3fd6c2;
   --c-s5: #ffab5c;
   --c-s6: #7fdc78;
-  --c-s7: #b79cff;
-  --c-s8: #ffc266;
-  --c-s9: #ff8fb0;
-  --c-s10: #5fd0e0;
-  --c-s11: #b8e05f;
-  --c-s12: #e08fef;
+  --c-s7: #ffe699;
+  --c-s8: #ccff99;
+  --c-s9: #99ffc3;
+  --c-s10: #99e9ff;
+  --c-s11: #cc99ff;
+  --c-s12: #fa99ff;
 }
 body.dark-mode .topbar { background: var(--bg); }
 body.dark-mode .modal { background: var(--surface); }
-body.dark-mode .add-btn:hover { background: #333; }
-body.dark-mode .btn-submit:hover { background: #444; }
-body.dark-mode .mode-toggle:hover { background: var(--ink); color: #141414; }
-body.dark-mode .mode-toggle.active { background: var(--ink); color: #141414; }
-body.dark-mode .today-btn:hover { border-color: var(--ink); color: var(--ink); }
-body.dark-mode .subject-filter option { background: var(--surface); }
-body.dark-mode .toast { background: #f0f0f0; color: #141414; }
-body.dark-mode .toast.success { background: #2d9e52; color: #fff; }
-body.dark-mode .toast.error { background: #ff6b5e; color: #141414; }
+/* 原先这里有三条 .toast 覆写（#f0f0f0 / #2d9e52 / #ff6b5e）与两条按钮 hover
+   覆写（#333 / #444）。主色归动作之后它们全部变成多余的——
+   .toast 本就用 --ink/--on-ink，成功/失败本就用 --success/--danger，
+   换一档 token 值就把暗色一起带过去了。删。 */
+
+/* ============================================================
+   主题：GitHub · 亮档
+   ============================================================
+   取值出处：@primer/primitives@11.10.0，dist/css/functional/themes/light.css
+   与 dist/css/functional/size/radius.css——两份都已原样落盘
+   .scratch/四主题体系/vendor/primer-11.10.0/（sha256 见同目录 PROVENANCE.json）。
+   每行右侧标官方 token 名，这是 ADR-0012 决定 6 的版本戳纪律：同一个 token 名
+   在别的版本里是别的值（暗档链接蓝旧版 #58a6ff、11.10.0 是 #4493f8），
+   不写版本与 token 名就等于没写出处，下一个人抄错也自称照抄官方。
+   官方圆角以 rem 计，此处按 16px 根字换算成 px：主题不许随字号滑块变（spec 故事 19）。
+   科目色与 :root 逐字相同——决定 4 的「复用不重算」。落点是本档的 --bg（内容区的底由 body/.main
+   上 --bg，--surface 只到顶栏与弹层为止）：白底上含表外 s7~s12 在内十二色最坏 4.06，全在 4:1 窗内；
+   六主科在 --bg/--surface 两底上各为 4.38~5.18 / 4.11~4.86。
+   这里有一个不能只当巧合记下来的数：--bg 若取 muted 的 #f6f8fa，s7 掉到 3.85、s9 掉到 3.82，
+   出窗。官方 default/muted 的分工本来就是白作页底、灰作卡片，照抄它恰好把窗口守住了（ADR-0012 决定 4b）。
+   块必须排在 body.dark-mode 之后：两者特异性同为 (0,1,1)，谁在后面谁说话。 */
+body.theme-github {
+  --bg: #ffffff;            /* --bgColor-default */
+  --surface: #f6f8fa;       /* --bgColor-muted */
+  --ink: #1f2328;           /* --fgColor-default */
+  --ink-dim: #59636e;       /* --fgColor-muted */
+  --ink-faint: #818b98;     /* --fgColor-disabled */
+  --line: #d1d9e0;          /* --borderColor-default */
+
+  /* 动作色仍是蓝：本档的 accent 家族官方就是这一个值
+     （--fgColor-accent 与 --bgColor-accent-emphasis 在 light 档相等）。
+     偏差登记：GitHub 自己的主按钮填充是绿的（--button-primary-bgColor-rest
+     → --bgColor-success-emphasis），本站的 --accent 一身兼三职（焦点环 /
+     选中态 / 提交钮），拆开就没有一条动作色了——留蓝，记在本块里当明账。 */
+  --accent: #0969da;            /* --bgColor-accent-emphasis */
+  --accent-strong: #0550ae;     /* --reactionButton-selected-fgColor-hover（选中态再压暗一档） */
+  --on-accent: #ffffff;         /* --fgColor-onEmphasis */
+  --on-ink: #ffffff;            /* --fgColor-onEmphasis */
+
+  /* 语义色取官方 emphasis 档：本站这三个 token 都作填充底用（toast 底、删除钮 hover），
+     配 --on-ink/--on-accent 的白字，白底上 4.52~5.36（底账 §4 的 Class C 判法）。 */
+  --success: #1f883d;       /* --bgColor-success-emphasis */
+  --danger: #cf222e;        /* --bgColor-danger-emphasis */
+  --warn: #9a6700;          /* --bgColor-attention-emphasis */
+
+  /* s1~s6 与 :root 逐字相同（承重层，FROZEN 钉死）；s7~s12 同样复用，
+     成套完整声明不留回落（spec 故事 3、5）。 */
+  --c-s1: #cf3227;
+  --c-s2: #2f6fd0;
+  --c-s3: #c23a8b;
+  --c-s4: #0d8574;
+  --c-s5: #c2410c;
+  --c-s6: #2f8a2e;
+  --c-s7: #9a7913;
+  --c-s8: #4d8811;
+  --c-s9: #129147;
+  --c-s10: #1484a3;
+  --c-s11: #6b18bf;
+  --c-s12: #b618bf;
+
+  /* 形状族：GitHub 的控件一律 6px，没有本站白板风那种胶囊。
+     --r-pill 在本档被改写成 6px 就是「把胶囊拉回方角」这一步，
+     它同时管着提交钮、取消钮、toast 与离线角标的两端。 */
+  --r-sm: 3px;              /* --borderRadius-small (0.1875rem) */
+  --r-md: 6px;              /* --borderRadius-medium (0.375rem) */
+  --r-lg: 12px;             /* --borderRadius-large (0.75rem) */
+  --r-pill: 6px;            /* --borderRadius-medium：GitHub 无胶囊档 */
+  --r-full: 50%;            /* 圆点还是圆点，与主题无关 */
+}
+body.theme-github .topbar { background: var(--bg); }
+body.theme-github .modal { background: var(--surface); }
 
 /* ============================================================
    响应式
@@ -652,54 +828,54 @@ body.dark-mode .toast.error { background: #ff6b5e; color: #141414; }
 }
 @media (max-width: 720px) {
   .subject-groups { grid-template-columns: minmax(0, 1fr); }
-  .topbar-inner { padding: 14px 16px; }
-  .main { padding: 20px 16px 80px; }
-  .manage-bar { padding: 12px 16px 14px; }
-  .hw-row { gap: 12px; }
-  .date-nav { order: 3; }
-  .modal-overlay { padding: 16px; }
+  .topbar-inner { padding: var(--sp-5) var(--sp-5); }
+  .main { padding: var(--sp-6) var(--sp-5) var(--sp-9); }
+  .hw-row { gap: var(--sp-4); }
+  .modal-overlay { padding: var(--sp-5); }
 }
 
-/* 触屏设备 */
+/* 触屏设备：只写"要比默认更大"的那几项。
+   原来这里有一条 .row-action-btn { width:40px; height:40px }——基础尺寸已按
+   spec §6 顶到 44px，留着它反而会在触屏上把按钮缩回去，违反"命中区只增不减"。 */
 @media (hover: none) {
-  .row-action-btn { width: 40px; height: 40px; }
-  /* 模态的三个出口都得是手指能稳定命中的尺寸 */
   .modal-close { width: 48px; height: 48px; }
-  .btn-cancel, .btn-submit { min-height: 48px; padding: 14px 28px; }
+  .btn-cancel, .btn-submit { min-height: 48px; padding: var(--sp-5) var(--sp-7); }
 }
 
 /* ============================================================
    展示模式（学生只读视图）
-   白板铺满：隐藏顶栏、日期导航、管理控件、行内操作
+   白板铺满：顶栏（含工具行）、展开条、行内操作全部隐藏
    ============================================================ */
 body.view-show .topbar { display: none; }
 body.view-show .expand-bar { display: none; }
-body.view-show .manage-bar { display: none; }
 
 /* 展示态右上角簇（时钟 + 退出展示）
    position:fixed 不参与布局，因此不会干扰 fitShowDisplay 的字号测量。 */
 .show-hud {
   position: fixed;
-  top: 20px;
-  right: 24px;
+  top: var(--sp-6);
+  right: var(--sp-6);
   z-index: 960;
   display: none;
   align-items: center;
-  gap: 12px;
+  gap: var(--sp-4);
 }
 body.view-show .show-hud { display: flex; }
 
-/* 展示模式时钟（精确到分） */
+/* 展示模式时钟（精确到分）
+   字重 600 而非 700：打包进来的 IBM Plex Sans 只有 600 一档，
+   写 700 会让浏览器自己合成粗体，字形会糊掉。 */
 .show-clock {
   display: flex;
   flex: none;
   align-items: center;
   background: rgba(255, 255, 255, 0.85);
   border: 1px solid var(--line);
-  border-radius: 30px;
-  padding: 6px 24px;
+  border-radius: var(--r-pill);
+  padding: var(--sp-3) var(--sp-6);
+  font-family: var(--font-latin);
   font-size: clamp(20px, 1.7vw, 32px);
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.08em;
   color: var(--ink);
   font-variant-numeric: tabular-nums; /* 等宽数字，避免分钟跳变时宽度抖动 */
@@ -714,14 +890,14 @@ body.dark-mode .show-clock { background: rgba(40, 40, 40, 0.85); }
    但绝不能打扰展示 —— 所以固定在左下、不参与布局、不可点击、不弹窗。 */
 .offline-badge {
   position: fixed;
-  left: 20px;
-  bottom: 20px;
+  left: var(--sp-6);
+  bottom: var(--sp-6);
   z-index: 940;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  border-radius: 999px;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  border-radius: var(--r-pill);
   background: var(--surface);
   border: 1px solid var(--line);
   color: var(--ink-dim);
@@ -734,23 +910,24 @@ body.dark-mode .show-clock { background: rgba(40, 40, 40, 0.85); }
 .offline-dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
-  background: var(--c-s5);   /* 橙红：醒目但不刺眼 */
+  border-radius: var(--r-full);
+  background: var(--warn);   /* 警示语义：不是哪一科的颜色，是「数据可能过期」 */
   flex: none;
 }
 body.dark-mode .offline-badge { background: rgba(40, 40, 40, 0.9); }
-/* 投影场景下略微放大，保证后排也能看见 */
-body.view-show .offline-badge { font-size: clamp(14px, 1.1vw, 20px); padding: 8px 18px; }
+/* 投影场景下只放大字号，保证后排也能看见（padding 吸附后与基础档同值，不再单列） */
+body.view-show .offline-badge { font-size: clamp(14px, 1.1vw, 20px); }
 
-/* 展示模式控制组（右下角：字号调节 + 退出按钮） */
+/* 展示模式控制组（右下角：字号调节 + 退出按钮）
+   四角离屏边的距离统一用 --sp-6，和右上角 .show-hud、左下角 .offline-badge 同尺。 */
 .show-ctrl {
   position: fixed;
-  bottom: 20px;
-  right: 20px;
+  bottom: var(--sp-6);
+  right: var(--sp-6);
   z-index: 950;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-4);
 }
 .show-ctrl.hidden { display: none; }
 body.view-show .show-ctrl.hidden { display: flex; }
@@ -759,11 +936,11 @@ body.view-show .show-ctrl.hidden { display: flex; }
 .show-font {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-2);
   background: rgba(255,255,255,0.85);
   border: 1px solid var(--line);
-  border-radius: 30px;
-  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  padding: var(--sp-2) var(--sp-4);
   opacity: 0.3;
   transition: opacity var(--dur-fast) var(--ease-out);
 }
@@ -772,12 +949,13 @@ body.view-show .show-ctrl.hidden { display: flex; }
   background: none;
   border: none;
   cursor: pointer;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
+  width: 44px;   /* 工单 016：一体机上这颗 30×30 是最后一处不达标的命中区 */
+  height: 44px;
+  border-radius: var(--r-full);
   color: var(--ink);
+  font-family: var(--font-latin);
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -786,7 +964,8 @@ body.view-show .show-ctrl.hidden { display: flex; }
 .show-font-val {
   font-size: 12px;
   color: var(--ink-dim);
-  min-width: 36px;
+  font-family: var(--font-latin);
+  min-width: var(--sp-7);
   text-align: center;
   font-weight: 600;
 }
@@ -801,11 +980,11 @@ body.view-show .show-ctrl.hidden { display: flex; }
   align-items: center;
   justify-content: center;
   min-height: 48px; /* 一体机触控目标，手指即鼠标 */
-  padding: 0 24px;
+  padding: 0 var(--sp-6);
   border: none;
-  border-radius: 30px;
-  background: var(--ink);
-  color: #fff;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--on-accent);
   font-family: inherit;
   font-size: clamp(16px, 1.4vw, 24px);
   font-weight: 700;
@@ -815,7 +994,6 @@ body.view-show .show-ctrl.hidden { display: flex; }
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
 .exit-show-btn:active { transform: scale(0.97); }
-body.dark-mode .exit-show-btn { color: #141414; }
 body.view-show .show-font { display: flex; }
 
 /* 投影降级的第一档就是这些间距/行高：装不下时先由 fitShowDisplay 挂上
@@ -828,6 +1006,14 @@ body.view-show {
   --show-head-gap: 16px;
   --show-deadline-gap: 20px;
   --show-line-h: 1.35;
+  /* 科名下沿到第一条作业的距离：与 --show-head-gap 同属一格之首的几何，dense 不压它。
+     它同样是阶梯的输入，别吸附到间距刻度上。 */
+  --show-head-pad: 6px;
+  /* 墙的外边距（承重）：它决定一格的可容宽度，也就是阶梯从哪一档开始触发。
+     .show-dense 不压它——压缩外边距换到的那点空间，抵不过字号跳档的观感损失。
+     40/48 与大屏档的 56/72 是实测留住的数字，别顺手吸附到间距刻度上。 */
+  --show-main-pad-v: 40px;
+  --show-main-pad-h: 48px;
 }
 body.view-show.show-dense {
   --show-gap-v: 12px;
@@ -839,7 +1025,7 @@ body.view-show.show-dense {
 }
 
 body.view-show .main {
-  padding: 40px 48px;
+  padding: var(--show-main-pad-v) var(--show-main-pad-h);
   height: 100vh;
   overflow: hidden;
   display: flex;
@@ -869,7 +1055,7 @@ body.view-show .hw-list {
   justify-content: safe center;
   overflow: hidden;
 }
-body.view-show .subject-head { padding-bottom: 6px; margin-bottom: var(--show-head-gap); }
+body.view-show .subject-head { padding-bottom: var(--show-head-pad); margin-bottom: var(--show-head-gap); }
 body.view-show .hw-row { padding: var(--show-row-pad) 0; }
 
 /* 整日为空时这一句是放给全班看的，编辑态的 17px 灰字后排读不到。
@@ -888,7 +1074,7 @@ body.view-show .hw-empty {
   list-style: none;
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: var(--sp-6);
   /* 字号与内边距都跟着阶梯的两档走。空格子是墙上信息量最低的一块，若它免疫于
      dense 与 fit-scale，九格「未布置」就能把整面墙顶进滚动兜底
      （工单 025 实测：固定 118px vs 同排正文行 42px，阶梯见底也吸收不掉）。
@@ -900,8 +1086,8 @@ body.view-show .hw-empty {
 }
 body.view-show .hw-empty::before {
   content: '';
-  width: 8px;
-  border-radius: 4px;
+  width: var(--sp-3);
+  border-radius: var(--r-pill);
   align-self: stretch;
   background: var(--subject-color, var(--ink-faint));
   opacity: 0.65;
@@ -934,7 +1120,7 @@ body.view-show .hw-row .deadline {
 body.view-show .hw-row .deadline svg {
   width: 0.75em;
   height: 0.75em;
-  margin-right: 2px;
+  margin-right: var(--sp-1);
 }
 body.view-show .subject-name {
   font-size: calc(clamp(38px, 3vw + 1vh, 76px) * var(--show-scale, 1) * var(--fit-scale, 1));
@@ -957,7 +1143,7 @@ body.view-show.show-scroll-fallback .main { height: auto; min-height: 100vh; }
 
 /* 希沃一体机触屏优化：展示模式一屏铺满（兜底档下 .main 自行展开，padding 不变） */
 @media (min-width: 1600px) {
-  body.view-show .main { padding: 56px 72px; }
+  body.view-show { --show-main-pad-v: 56px; --show-main-pad-h: 72px; }
 }
 
 /* ============================================================
