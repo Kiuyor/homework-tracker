@@ -79,7 +79,7 @@ const blockAt = sel => SRC.indexOf(sel + ' {');
 // token 块 = 只写变量定义的块。§7(a)-2 靠它豁免，§7(a)-7 靠它认主题。
 // 每加一档就要在这里在册一次——反过来，漏在册的块会被 :7(a)-7a 那条反向断言当场判红。
 const TOKEN_BLOCKS = new Set([':root', 'body.dark-mode',
-  'body.theme-github', 'body.theme-github.dark-mode', 'body.theme-glass']);
+  'body.theme-github', 'body.theme-github.dark-mode', 'body.theme-glass', 'body.theme-glass.dark-mode']);
 
 // 外观族名单（"成套完整声明"的范围，spec §2 与 ADR-0012 决定 3 指的是同一份）。
 // 刻意不含 --sp-*（跨主题唯一）与 --show-*（承重层，只许改名不许改值）。
@@ -104,6 +104,15 @@ const THEME_NAMES = ((UIJS.match(/THEME_NAMES\s*=\s*\[([^\]]*)\]/) || [, ''])[1]
 const THEME_BLOCKS = [...TOKEN_BLOCKS].filter(s => /^body\.theme-/.test(s));
 
 test('解析器本身可信：认不出这几条已知选择器就说明解析坏了', () => {
+  // 注释正文里不许出现 `*/`：CSS 注释在**第一个** `*/` 处闭合（浏览器就是这么切的），
+  // 所以在注释里写 `ink` 星号 `line` 这类通配符会把注释提前关掉，剩下的中文泄漏成代码。
+  // 浏览器的反应是把紧跟着的整条规则当无效选择器丢掉——那一档 token 静默失效，肉眼与 devtools
+  // 都只会看到"这档没变化"。摘完注释的源码里若还留着 `*/`，就说明其中某次闭合是假的
+  // （唯一的例外是真写在字符串里的 `*/`，比如 `content: "a*/b"`——CSS 里没有这种写法，写进来时这条会响，
+  // 那时把断言改成"逐条注释配对"而不是关掉它）。
+  // 只管 CSS 不是遗漏：同样形状的失误在 JS 里是语法错误，`node --check` 与加载即抛，本来就藏不住。
+  assert.ok(!SRC.includes('*/'),
+    '注释正文里出现了 */（如 ink*/ 这类通配符写法），注释提前闭合、后面的中文被当成选择器');
   // 'body.theme-github' 是主题化的探针：解析器读不到新块，003-005 的所有读数都是瞎的。
   // 带 .dark-mode 的那一条读的是**复合选择器**——解析器只测过单类名的块，
   // 而 004/005 的玻璃两档全靠这一层，读不到它就会把"块不存在"当成"值不达标"报出去。
@@ -111,7 +120,7 @@ test('解析器本身可信：认不出这几条已知选择器就说明解析�
   // ①②两条反向门禁判的是"材质没跑到内容区/科目色上"，源码里一条 backdrop-filter 都没有时
   // 它们会一起假绿——反向断言必须配一条正向的"这东西确实存在"，否则删掉整条材质就等于通过。
   for (const need of [':root', 'body.dark-mode', 'body.theme-github', 'body.theme-github.dark-mode',
-    'body.theme-glass', '.add-btn', '.exit-show-btn', '@font-face']) {
+    'body.theme-glass', 'body.theme-glass.dark-mode', '.add-btn', '.exit-show-btn', '@font-face']) {
     assert.ok(blockOf(need), `解析器没找到 ${need}`);
   }
   assert.ok(RULES.some(r => /^body\.theme-glass/.test(r.selector) &&
@@ -624,24 +633,34 @@ test('§7(a)-9c 浮层 α 有下限：--glass-alpha/--floor-alpha 亮档 ≥0.92
   assert.deepEqual(offenders, [], '浮层 α 低于实测下限（底账 §3）');
 });
 
-test('§7(a)-9d 玻璃档不重算任何 hex：十二色与 :root 逐字相等', () => {
-  // 出处：spec 故事 7/8 的"复用不重算"，工单 004 的验收第一条。
+test('§7(a)-9d 玻璃档不重算任何 hex：十二色与该梯的锁死组逐字相等', () => {
+  // 出处：spec 故事 7/8 的"复用不重算"，工单 004 的验收第一条、005 的暗档半边。
   // 判据写成**值相等**而不是"各自 ≥4:1"：达标由 --bg 落窗（§7(a)-8b）保证，
   // 而"这一档到底有没有偷偷新算一个 hex"只有相等性能回答。§7(a)-8b 绿、六色却被换过，
   // 是完全可能的一次误操作——那时窗口读数会跟着重新算绿，没人看得见颜色被换过。
-  const root = blockOf(':root');
-  assert.ok(root, '找不到 :root 块');
-  const glass = blockOf('body.theme-glass');
-  assert.ok(glass, '找不到 body.theme-glass 块');
-  const drift = [];
-  for (let i = 1; i <= 12; i++) {
-    const p = `--c-s${i}`;
-    const mine = declOf(glass, p);
-    const base = declOf(root, p);
-    assert.ok(mine && base, `${p} 在某一侧不见了`);
-    if (mine.value !== base.value) drift.push(`${p} ${base.value} → ${mine.value}`);
+  //
+  // 两张对照表按**梯**配，不是一张表比 :root：暗档玻璃的底是暗的，它要复用的是 `body.dark-mode`
+  // 那组亮科目色（001 实测暗档六色压暗档底 5.83~6.80 全过，于是把重算步骤整条删掉）。
+  // 拿暗档去比 :root 会在第一格就判红，而那条红是假的。
+  const PAIRS = [
+    ['body.theme-glass', ':root'],
+    ['body.theme-glass.dark-mode', 'body.dark-mode'],
+  ];
+  for (const [sel, baseSel] of PAIRS) {
+    const baseBlock = blockOf(baseSel);
+    assert.ok(baseBlock, `找不到 ${baseSel} 块`);
+    const tierBlock = blockOf(sel);
+    assert.ok(tierBlock, `找不到 ${sel} 块`);
+    const drift = [];
+    for (let i = 1; i <= 12; i++) {
+      const p = `--c-s${i}`;
+      const mine = declOf(tierBlock, p);
+      const theirs = declOf(baseBlock, p);
+      assert.ok(mine && theirs, `${p} 在某一侧不见了`);
+      if (mine.value !== theirs.value) drift.push(`${p} ${theirs.value} → ${mine.value}`);
+    }
+    assert.deepEqual(drift, [], `${sel} 重算了科目色：${drift.join('、')}——理由见本条注释`);
   }
-  assert.deepEqual(drift, [], '玻璃档重算了科目色：' + drift.join('、') + '——理由见本条注释');
 });
 
 /* ---------- §7(a)-6 命中区不低于 44px（源码侧闸门） ---------- */
