@@ -676,7 +676,7 @@ test('§7(a)-6 命中区清单里每一处的 CSS 值都不低于 44px', () => {
     '.modal-close': ['width', 'height'],
     '.show-font button': ['width', 'height'],
     '.exit-show-btn': ['min-height'],
-    // 主题选择器（spec 故事 15）：触控下四选一每档都要按得到。
+    // 主题选择器（spec 故事 15）：入口是一颗钮、选项在弹层里（ADR-0013），弹层里每档都要按得到。
     // min-height 写死 48px 而不是 var(--sp-8)：这条断言读 parseFloat，函数式值读不出数。
     '.theme-seg .seg-opt': ['min-height', 'min-width'],
   };
