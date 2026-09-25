@@ -561,18 +561,25 @@ body.manage-on .hw-row { cursor: pointer; user-select: none; }
 .modal-close svg { width: 20px; height: 20px; }
 .modal-close:hover { color: var(--accent); }
 
+/* 横向内边距不在这里，在 .form-body 与 .form-actions 上各写一份（同值 var(--sp-7)）：
+   .form-body 是裁切盒，焦点环画在它外面，padding 得落在盒子内侧才给得出地方。 */
 #homeworkForm {
-  padding: var(--sp-7);
+  padding: var(--sp-7) 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
   flex: 1;
 }
-/* 模态里唯一的滚动区：字段多/视口矮时滚这里，「取消/保存」不跟着滚走 */
+/* 模态里唯一的滚动区：字段多/视口矮时滚这里，「取消/保存」不跟着滚走。
+   overflow-y 一旦不是 visible，overflow-x 的 visible 会被浏览器算成 auto——这个盒子因此在横向上也裁。
+   全站焦点环画在元素边框盒**外面**（2px 实线 + 2px offset = 外沿 4px），字段又是 width:100%，
+   于是环的左右两条竖边整条被切掉（改前读数：余量 0 / 需 4px）。padding 挪到这里，环就有 32px 可花，
+   而字段的位置与宽度一字未动：盒子宽 556，内容区 556−32−32 = 原来那 492。 */
 .form-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  padding-inline: var(--sp-7);
 }
 .form-group { margin-bottom: var(--sp-6); }
 .form-group label {
@@ -666,6 +673,7 @@ body.manage-on .hw-row { cursor: pointer; user-select: none; }
   gap: var(--sp-4);
   justify-content: flex-end;
   margin-top: var(--sp-7);
+  padding-inline: var(--sp-7);   /* 与 .form-body 同一份：#homeworkForm 只留上下内边距 */
 }
 .btn-cancel, .btn-submit {
   padding: var(--sp-4) var(--sp-6);
