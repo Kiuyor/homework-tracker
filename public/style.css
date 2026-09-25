@@ -1196,7 +1196,12 @@ body.view-show .show-hud { display: flex; }
   display: flex;
   flex: none;
   align-items: center;
-  background: rgba(255, 255, 255, 0.85);
+  /* 底色读 var(--surface)，不写 rgba(255,255,255,.85)：写死白的那几年里，暗档靠一条
+     body.dark-mode 覆写找补，而主题体系之后"档"不止亮暗两种（主题 × 明暗），一条 dark-mode
+     覆写只能盖住一个主题的灰。每档各自说满外观族是 ADR-0012 的规矩（门禁 §7(a)-7d）。
+     先实底再 color-mix：不认 color-mix() 的引擎留着实底，认的才拿到八成透明。 */
+  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
   border: 1px solid var(--line);
   border-radius: var(--r-pill);
   padding: var(--sp-3) var(--sp-6);
@@ -1210,7 +1215,6 @@ body.view-show .show-hud { display: flex; }
   /* 始终高亮显示（不做 hover 显影），保证后排也能看清当前时间 */
   opacity: 1;
 }
-body.dark-mode .show-clock { background: rgba(40, 40, 40, 0.85); }
 
 /* 离线角标（左下角）
    设计意图：刷新连续失败时让老师知道「投影上的作业可能已经过期」，
@@ -1241,7 +1245,9 @@ body.dark-mode .show-clock { background: rgba(40, 40, 40, 0.85); }
   background: var(--warn);   /* 警示语义：不是哪一科的颜色，是「数据可能过期」 */
   flex: none;
 }
-body.dark-mode .offline-badge { background: rgba(40, 40, 40, 0.9); }
+/* 原来这里是一条 body.dark-mode .offline-badge { background: rgba(40,40,40,.9) }：
+   它把白板风的灰抄给所有暗档，于是 github/glass 的暗档角标底色不属于那套主题。
+   本体已经读 var(--surface)，删掉覆写即按档走。 */
 /* 投影场景下只放大字号，保证后排也能看见（padding 吸附后与基础档同值，不再单列） */
 body.view-show .offline-badge { font-size: clamp(14px, 1.1vw, 20px); }
 
@@ -1264,14 +1270,20 @@ body.view-show .show-ctrl.hidden { display: flex; }
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  background: rgba(255,255,255,0.85);
+  /* 与 .show-clock 同一条规矩：底色读 var(--surface)，不写死白（写死白在暗档是一块白岛，
+     那岛上又画着本档的浅色焦点环——实测环对底 1.63~2.43:1，探针 .scratch/verify-focus-ring-page.js）。 */
+  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
   border: 1px solid var(--line);
   border-radius: var(--r-pill);
   padding: var(--sp-2) var(--sp-4);
   opacity: 0.3;
   transition: opacity var(--dur-fast) var(--ease-out);
 }
-.show-font:hover { opacity: 0.95; }
+/* 焦点也要显影，不能只给 hover 留门：一体机上没有 hover（同一处道理见上面 .exit-show-btn 的注释，
+   那颗旧铅笔图标就是"0.25 透明、只在 :hover 才显影，等于没有出口"），键盘 Tab 走进这组时
+   整组还压在 opacity:.3 上——环是画出来了，连它底下的底一起被压成三成，等于没画。 */
+.show-font:hover, .show-font:focus-within { opacity: 0.95; }
 .show-font button {
   background: none;
   border: none;

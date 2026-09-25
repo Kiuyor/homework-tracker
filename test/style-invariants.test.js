@@ -245,6 +245,47 @@ test('§7(a)-2 token 块之外没有游离硬编码色', () => {
   assert.deepEqual(stray, [], '这些颜色应当来自 token 而不是写死');
 });
 
+/* ---------- §7(a)-2b 展示态 HUD 的底色按档走，且焦点要显影 ---------- */
+
+// 为什么单独立一条：§7(a)-2 放过每一个 rgba() 字面量（阴影与"压在白板上的雾"靠它），
+// 于是展示态右下角那块写死的 rgba(255,255,255,.85) 一路绿到今天——暗档里它是一块白岛，
+// 岛上画着本档的浅色焦点环，实测环对白岛 1.63:1（探针 .scratch/verify-focus-ring-page.js）。
+// 同一族的 .show-clock / .offline-badge 各留一条 body.dark-mode 覆写找补：那条只认白板风的灰，
+// github/glass 的暗档照样不属于那套主题。三处一起钉：底色读 var(--surface)，且不许再按档写覆写。
+const HUD = ['.show-clock', '.show-font', '.offline-badge'];
+
+test('§7(a)-2b 展示态 HUD 三块的底色来自 var(--surface)', () => {
+  for (const sel of HUD) {
+    const rule = RULES.find(r => r.selector === sel);
+    assert.ok(rule, `${sel} 不见了——HUD 三块的账没地方记`);
+    const bgs = rule.decls.filter(d => d.prop === 'background');
+    assert.ok(bgs.length, `${sel} 没有 background 声明`);
+    for (const d of bgs) {
+      assert.match(d.value, /var\(--surface\)/,
+        `${sel} { background: ${d.value} } 又写死了底色——暗档里它会变成一块白岛，本档的焦点环压在它上面看不见`);
+    }
+  }
+});
+
+test('§7(a)-2b2 没有一条 body.dark-mode 覆写替主题代笔 HUD 底色', () => {
+  // 反向断言：按亮暗写覆写是 ADR-0012 之前的旧写法（"档"曾经只有亮暗两个），
+  // 现在档位是主题 × 明暗，覆写只能盖住一个主题的那一档灰。删掉它才算按档走。
+  const olds = RULES.filter(r => /^body\.dark-mode\b/.test(r.selector)
+    && HUD.some(h => r.selector.includes(h))
+    && r.decls.some(d => /^background/.test(d.prop)));
+  assert.deepEqual(olds.map(r => `${r.selector} { ${r.decls.map(d => d.prop).join(',')} }`), [],
+    '这些亮暗覆写把某一套主题的灰抄给了所有暗档');
+});
+
+test('§7(a)-2b3 字号组显影不只给 hover 留门（键盘焦点也要）', () => {
+  // 一体机与键盘都没有 hover：静息 opacity .3 的组里画一条环，环连底一起被压成三成，等于没画。
+  const rules = RULES.filter(r => /\.show-font\b[^,{]*:hover/.test(r.selector));
+  assert.ok(rules.length, '.show-font 的 hover 显影不见了（静息 .3 得有个显影的门）');
+  assert.ok(rules.some(r => r.selector.includes(':focus-within')),
+    '.show-font 只在 :hover 显影——键盘 Tab 走进这组时整组还压在 opacity:.3 上，焦点环跟着被压掉');
+});
+
+
 /* ---------- §7(a)-3 间距/圆角/定位不写裸 px ---------- */
 
 const SPACING = /^(padding|padding-\S+|margin|margin-\S+|gap|row-gap|column-gap|border-radius|top|right|bottom|left)$/;
