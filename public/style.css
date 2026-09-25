@@ -636,6 +636,20 @@ body.manage-on .hw-row { cursor: pointer; user-select: none; }
 }
 .seg-opt + .seg-opt { border-left: 1px solid var(--line); }
 .seg-opt.active { background: var(--accent); color: var(--on-accent); }
+/* 这一族里全站那条环是画不出来的：.seg 的 overflow:hidden（把选项底色关进 --r-md 圆角）
+   就是裁切盒，而那条环画在元素盒子**外面** 4px——三组按钮四边余量实测全 0，环整条不见
+   （探针 .scratch/verify-focus-ring-clip.js）。修法走顶部那条规则自己留的口子
+   （:where() 把特异性压到 0，「个别控件需要微调时可直接在组件规则里覆盖」）：把环推进
+   按钮自己的盒子里，-4px 让 2px 环落在内侧 2~4px 处，裁切盒便管不到它。
+   代价三笔，都量过：① 环贴着按钮内侧，与全站「环浮在外面」的观感不一致；
+   ② 选中的那一格底色本身就是 --accent，同色环压同色底等于没画，得换成坐在这块底上的
+   文字色 --on-accent——在册六档实测 5.19~8.61:1（最低是 github 亮档 #ffffff 压 #0969da），
+   读数在探针的「可见性」腿里，不在这里手抄；
+   ③ 环既然画进盒子，就落进了 .seg 那道圆角的作用范围：拐角处环会被自己的圆角啃掉一截
+   笔尾，whiteboard（--r-md 12px）啃 2.5px、玻璃（16px）啃 5.25px、github（6px）不啃，
+   每个受影响的选项 1~2 个角，逐角取像素复核过。 */
+.seg-opt:focus-visible { outline-offset: calc(-2 * var(--sp-1)); }
+.seg-opt.active:focus-visible { outline-color: var(--on-accent); }
 
 /* 科目选择器（ADR-0011）：六科闭集的六个按钮。
    .seg 本为「当天/次日」那种两三项、永不换行的控件设计，分隔线用 border-left；

@@ -188,6 +188,9 @@ const ACCENT_ALLOWED = new Set([
   '.modal-close:hover', '.mode-toggle', '.mode-toggle:hover, .mode-toggle.active',
   '.row-action-btn:hover', '.row-action-btn.del:hover',
   '.seg-opt.active',
+  // 与上一行同一个落点的另一半：选中的那一格底色就是 --accent，全站那条同色环压上去实测 1:1
+  // （等于没画），所以环色换成压在 accent 上的文字色。不是新的动作色落点，是 .seg-opt.active 这一格自己的配色对。
+  '.seg-opt.active:focus-visible',
   '.tool-btn:hover', '.tool-btn.active', '.today-btn:hover',
   '#fontSizeSlider::-webkit-slider-thumb',
   // 工单 004 新增一处：玻璃档把浮条 .expand-bar 的填充抽薄成 color-mix(--accent …)。
@@ -279,6 +282,22 @@ test('§7(a)-4 焦点环全站统一，且没有任何地方把它抹掉', () =>
   // 组件里不再各写一份：多写的每一份，都是下一个"忘了跟全站一致"的地方
   const dupes = RULES.filter(r => r.selector !== GLOBAL_RING && declOf(r, 'outline')).map(r => r.selector);
   assert.deepEqual(dupes, [], '这些规则自带 outline，绕开了全站焦点环');
+});
+
+// 全站那条环画在元素盒子外面 4px（2px 实线 + 2px offset）。`.seg` 为了把选项底色关进
+// --r-md 的圆角而 overflow:hidden，于是里面三组按钮（科目六格 / 当天次日 / 主题弹层）四边
+// 余量实测全 0，环整条不见——探针 .scratch/verify-focus-ring-clip.js 那 6 条读数。
+// 修法是组件级把环推进按钮自己的盒子里（全站规则自己留的口子：:where() 压特异性，
+// 组件规则可覆盖；且 outline-offset / outline-color 都不算第二个 outline 作者，上面那条照旧绿）。
+// 这里钉的是"这条覆盖还在"：它一掉，弹层里的环就静悄悄回到"整条被裁"的状态。
+test('§7(a)-4b .seg 里的环是内描的，且选中那一格换了环色', () => {
+  const inset = blockOf('.seg-opt:focus-visible');
+  assert.ok(inset, '.seg-opt 的环内描覆盖不见了——.seg 的 overflow:hidden 会当场把环裁成 0 像素');
+  assert.equal(declOf(inset, 'outline-offset').value, 'calc(-2 * var(--sp-1))',
+    '环外沿要在按钮盒子内侧 ≥4px：内侧 2~4px 落在裁切盒里，0~2px 仍被 .seg 切到');
+  const swap = blockOf('.seg-opt.active:focus-visible');
+  assert.ok(swap, '选中的那一格没有换环色——accent 底压 accent 环，运行时实测 1:1，等于没画');
+  assert.equal(declOf(swap, 'outline-color').value, 'var(--on-accent)', '环色应与 accent 底配对，不用别的色');
 });
 
 /* ---------- §7(a)-5 承重层逐字未动 ---------- */
