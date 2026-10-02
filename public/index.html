@@ -73,8 +73,13 @@
   </main>
 
   <!-- Add / Edit Modal -->
+  <!-- role=dialog + aria-modal：这座模态之外的一切此刻都不可达，说给辅助技术听。
+       aria-labelledby 指向那颗标题（文案随"添加/编辑〈科目〉"变），标签跟着变而不是写死一句。
+       tabindex=-1 让打开时能把焦点交给模态本身——焦点不落在任何字段上，软键盘因而不会自己弹起，
+       而"退出"只剩明写的那三条路（保存 / 取消 / ×）。
+       焦点进得来也出得去：Tab 在模态内循环、Esc 关闭、关闭后焦点归还给打开它的那颗钮。 -->
   <div class="modal-overlay hidden" id="modalOverlay">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" tabindex="-1" id="modalEl">
       <div class="modal-header">
         <h2 id="modalTitle">添加作业</h2>
         <button class="modal-close" id="modalClose" title="关闭">
@@ -116,8 +121,12 @@
     </div>
   </div>
 
-  <!-- Toast Container -->
-  <div class="toast-container" id="toastContainer"></div>
+  <!-- Toast Container
+       role=status + aria-live=polite：toast 是唯一一处"切日期/主题/离线"之外的操作反馈，
+       此前它只是一块会自己消失的 div——视觉上说了，辅助技术上等于没说。
+       容器常驻在初始 HTML 里（不是插入时才建），aria-live 区域必须先存在才开始观察。
+       polite 而非 assertive：按保存是用户自己发起的，后到的 409 文案不该打断他正在听的东西。 -->
+  <div class="toast-container" id="toastContainer" role="status" aria-live="polite"></div>
 
   <!-- 展示态右上角簇：时钟 + 出口。出口和「看时间」是同一角落里两件事——
        前者给人按，必须和后者一样显眼，所以并进同一个容器由 .show-hud 统一定位。 -->
@@ -133,8 +142,8 @@
     <span class="offline-dot"></span>离线 · 数据可能不是最新
   </div>
 
-  <!-- 展示模式字号调节（右下角） -->
-  <div class="show-ctrl hidden" id="showCtrl">
+  <!-- 展示模式字号调节（右下角）。恒在场，没有 hidden 开关——原因写在 style.css 的 .show-ctrl 上。 -->
+  <div class="show-ctrl" id="showCtrl">
     <div class="show-font" id="showFontCtrl">
       <button id="showFontMinus" title="缩小字号"><span>A−</span></button>
       <span class="show-font-val" id="showFontVal">100%</span>

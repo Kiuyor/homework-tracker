@@ -8,7 +8,8 @@
   dom.nextDate.addEventListener('click', function () { window.changeDate(1); });
   dom.todayBtn.addEventListener('click', window.goToday);
 
-  // 自动定位到当天：进入页面时 currentDate 已是 new Date()，无需额外处理
+  // 自动定位到当天：state.js 里 currentDate 初值就是"今天"的本地午夜，这里无需额外处理。
+  // 跨午夜由 state.js 的 syncToday() 负责（分钟定时器 + 页面重新可见时各校一次）。
 
   // Add homework
   dom.addBtn.addEventListener('click', window.openAddModal);
@@ -119,6 +120,13 @@
   // 刻意不监听遮罩点击：纯触控下打字时手掌就会压到遮罩，
   // 「点空白处 = 静默清空已输入内容」是实测到的日常事故（故事 15）。
   // 离开模态只剩三条显式路：保存、取消、右上角 ×。
+  // 键盘再加两条同义的：Esc = 取消，Tab 在模态内循环（不许跑到背后的顶栏上——
+  // 那样"焦点在屏上、眼睛在弹窗里"，退全屏/切日期都会被误触发）。
+  // 监听挂在 overlay 上：模态开着时焦点一定在它内部，事件必然冒泡到这里。
+  dom.modalOverlay.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { e.preventDefault(); window.closeModal(); return; }
+    if (e.key === 'Tab') window.trapFocus(e, window.AppDom.modalEl);
+  });
 
   // 科目选择器：六个按钮，名单来自 state.subjects（ADR-0011）。委托在容器上——
   // 按钮会被 renderSubjectSeg 整批重建，逐个绑 listener 会在重绘后静默失灵。
@@ -177,29 +185,33 @@
   // Form submit
   dom.homeworkForm.addEventListener('submit', async function (e) {
     e.preventDefault();
-    var data = {
-      content: dom.contentInput.value.trim(),
-      date: window.formatDate(state.currentDate),
-    };
-    // 科目只能是选择器点出来的那一个：id 直发，不再有可能带一个新名字的 subject_name 分支
-    // （后端同样拒收，见 ADR-0011）。没点 = 挡住，别等到网络回来。
+    // 所属日取模态打开那一刻的快照（ui.js 里写进 state.modalContextDate），
+    // **不**现读 state.currentDate。模态虽然盖住了顶栏（overlay 是 fixed inset:0、z-index 1000，
+    // 指针点不到背后的日期导航），但键盘曾经能从 Tab 循环的缺口退到顶栏、在日期钮上按 Enter
+    // 把视图翻走——所以"打开弹窗后所属日会变"这条路是真实存在的，现读就等于顺手改期。
+    // 编辑态更严一层：一条已存在的作业，所属日永远是它自己那一天，
+    // 改正文/死线不许连带改期（改期是另一件事，要走"这条属于哪天"的显式动作）。
+    var data = { content: dom.contentInput.value.trim() };
     var subj = state.subjects.find(function (s) { return String(s.id) === String(state.subjectPickId); });
     if (!subj) {
       window.showToast('请选择科目', 'error');
       return;
     }
     data.subject_id = subj.id;
+    data.date = state.editingId
+      ? (state.deadlineOwnerDate || window.formatDate(state.currentDate))
+      : (state.modalContextDate || window.formatDate(state.currentDate));
     var deadlineVal = document.getElementById('deadlineInput').value.trim();
     data.deadline = null;
     if (deadlineVal) {
       // 手动输入：只接受时间 "14:30"，宽容提取（带日期也能取到时间）
-      // 落哪一天由「当天/次日」决定，基准永远是该条的所属日（新建时为查看日）。
+      // 落哪一天由「当天/次日」决定，基准永远是该条的所属日（新建时为打开弹窗那天）。
       // offset 为 null 表示这条历史 deadline 两档都不属于——用户没点段控件就原样保留
       // 那一天，改正文不会把死线挪走。
       var offset = state.deadlineDayOffset;
       var baseDate = offset === null
         ? String(state.editingDeadline || '').slice(0, 10)
-        : (state.deadlineOwnerDate || window.formatDate(state.currentDate));
+        : (state.deadlineOwnerDate || data.date);
       data.deadline = window.parseDeadlineInput(deadlineVal, baseDate, offset === null ? 0 : offset);
       if (!data.deadline) {
         window.showToast('截止时间格式无效，请填如 14:30', 'error');
@@ -240,6 +252,17 @@ window.init = async function () {
   // DOM class 与计时器统一由 applyViewMode 摆好——不再无条件 add('manage-on')，
   // 那等于绕过单一入口把编辑控件带到展示态上。
   window.applyViewMode();
+  // 「今天」校正器：先记下基准日（这一下不动视图），再每分钟校一次。
+  // 教室机常年不关机，跨午夜后 currentDate 还停在昨天的话，这面墙会安静地
+  // 把昨天的作业当今天讲一整节（见 state.js 的 syncToday）。
+  window.syncToday();
+  if (state.dateSyncTimer) clearInterval(state.dateSyncTimer);
+  state.dateSyncTimer = setInterval(window.syncToday, 60 * 1000);
+  // 标签页在后台时定时器会被节流（一体机上还会被系统挂起），所以每次重新可见再校一次——
+  // 上课前点亮屏幕那一刻才是真正要准的时候。
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) window.syncToday();
+  });
   // URL ?scale=1.3 预设展示字号（部署时可通过地址固定字号）
   var urlScale = parseFloat(new URLSearchParams(window.location.search).get('scale'));
   if (urlScale && urlScale >= 0.5 && urlScale <= 2) {

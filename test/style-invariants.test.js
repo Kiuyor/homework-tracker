@@ -79,7 +79,8 @@ const blockAt = sel => SRC.indexOf(sel + ' {');
 // token 块 = 只写变量定义的块。§7(a)-2 靠它豁免，§7(a)-7 靠它认主题。
 // 每加一档就要在这里在册一次——反过来，漏在册的块会被 :7(a)-7a 那条反向断言当场判红。
 const TOKEN_BLOCKS = new Set([':root', 'body.dark-mode',
-  'body.theme-github', 'body.theme-github.dark-mode', 'body.theme-glass', 'body.theme-glass.dark-mode']);
+  'body.theme-github', 'body.theme-github.dark-mode', 'body.theme-discord', 'body.theme-discord.dark-mode',
+  'body.theme-glass', 'body.theme-glass.dark-mode']);
 
 // 外观族名单（"成套完整声明"的范围，spec §2 与 ADR-0012 决定 3 指的是同一份）。
 // 刻意不含 --sp-*（跨主题唯一）与 --show-*（承重层，只许改名不许改值）。
@@ -115,11 +116,12 @@ test('解析器本身可信：认不出这几条已知选择器就说明解析�
     '注释正文里出现了 */（如 ink*/ 这类通配符写法），注释提前闭合、后面的中文被当成选择器');
   // 'body.theme-github' 是主题化的探针：解析器读不到新块，003-005 的所有读数都是瞎的。
   // 带 .dark-mode 的那一条读的是**复合选择器**——解析器只测过单类名的块，
-  // 而 004/005 的玻璃两档全靠这一层，读不到它就会把"块不存在"当成"值不达标"报出去。
+  // 而 003/004/005 的三对暗档块全靠这一层，读不到它就会把"块不存在"当成"值不达标"报出去。
   // 玻璃档那一条不只测"块读得到"，还测**这个块真的挂了材质**（下面那句 assert.ok）：
   // ①②两条反向门禁判的是"材质没跑到内容区/科目色上"，源码里一条 backdrop-filter 都没有时
   // 它们会一起假绿——反向断言必须配一条正向的"这东西确实存在"，否则删掉整条材质就等于通过。
   for (const need of [':root', 'body.dark-mode', 'body.theme-github', 'body.theme-github.dark-mode',
+    'body.theme-discord', 'body.theme-discord.dark-mode',
     'body.theme-glass', 'body.theme-glass.dark-mode', '.add-btn', '.exit-show-btn', '@font-face']) {
     assert.ok(blockOf(need), `解析器没找到 ${need}`);
   }
@@ -553,8 +555,46 @@ test('§7(a)-8a 门禁里的对比度数学自证：四个已知读数对得上'
   }
 });
 
-test('§7(a)-8b 每一块的 --bg 相对自己那组六色最坏读数 ≥4:1', () => {
+/** 把一条属性值在本块里解析成六位 hex。`var(--surface)` → 本块自己声明的那个值。
+ *  走 var() 链而不是一次查表：别名写法（`--card: var(--surface)`）不该被当成"读不出来"放过。 */
+function hexInBlock(rule, value, depth = 0) {
+  const v = String(value == null ? '' : value).trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) return v.toLowerCase();
+  const m = /^var\(\s*(--[\w-]+)\s*\)$/.exec(v);
+  if (!m || depth > 8) return null;
+  const root = blockOf(':root');
+  const d = declOf(rule, m[1]) || (root ? declOf(root, m[1]) : null);
+  return d ? hexInBlock(rule, d.value, depth + 1) : null;
+}
+
+/** 这一块的科目色**实际坐在哪一层**：默认是页底 `--bg`；有主题覆写把 `.subject-group` 刷到
+ *  别的 token 上时，那一层才是对比度的基准。按源码顺序取最后一条命中的覆写（CSS 自己就是这么决胜的）。
+ *  只认 `body.theme-X[.dark-mode] .subject-group` 这一种形状：读不懂时保守回到 `--bg`——
+ *  回到 `--bg` 会让 Discord 亮档当场判红（灰桌上 s6 只有 3.73），所以这条保守的方向是"响"，
+ *  不是"静默放过"。判红的正文会写明落底层读的是哪一条，读不懂选择器的人看得见自己错在哪。 */
+function subjectBack(sel) {
+  const rule = blockOf(sel);
+  const own = declOf(rule, '--bg');
+  let back = own ? { from: `${sel} 的 --bg`, value: own.value } : null;
+  const name = /^body\.theme-([a-z]+)/.exec(sel);
+  const dark = /\.dark-mode\b/.test(sel);
+  for (const r of RULES) {
+    for (const part of r.selector.split(',')) {
+      const m = /^body\.theme-([a-z]+)((?:\.dark-mode)?)\s+\.subject-group$/.exec(part.trim());
+      if (!m || !name || m[1] !== name[1]) continue;
+      if (m[2] && !dark) continue;          // 带 .dark-mode 的覆写只对暗档成立，亮档不继承
+      const bg = declOf(r, 'background');
+      if (bg) back = { from: part.trim(), value: bg.value };
+    }
+  }
+  return back;
+}
+
+test('§7(a)-8b 每一块的落底层相对自己那组六色最坏读数 ≥4:1', () => {
   // 判据出处：spec 故事 8「任一 body.theme-* 块的 --bg 相对该块自己那组的六色最坏读数 ≥4:1，由门禁钉住」。
+  // 「--bg」到 Discord 亮档这一档才需要改写：它把内容刷在白卡上、让裁下来的那个灰只留作页面底，
+  // 于是"块自己的 --bg"不再是科目色坐的那层，故事 8 真正要钉的是**后者**。
+  // 这条改写不是放松——判的仍是同一批颜色对，只是基准跟着实际涂色层走（见上面 subjectBack）。
   // 白板那两块（:root / body.dark-mode）一并纳进来：故事 8 只点名主题块，但这条断言管的是
   // "有人把页底改暗一档"，这个错误对默认档同样成立，而默认档现在最坏 4.38、暗档 7.25，本来就过。
   // 地板取 4:1 不是 4.5：白板 s6 在白底只有 4.38，写 4.5 会把上一轮锁死的承重值当场判红，
@@ -565,29 +605,48 @@ test('§7(a)-8b 每一块的 --bg 相对自己那组六色最坏读数 ≥4:1', 
   // 玻璃档那块带冷调的页底 #f6f8fb 读到 3.86/3.82 —— 也就是说"十二色 ≥4:1"这条判据
   // **没有任何带色调的亮底能满足**，把它写进门禁等于当场给上一轮锁死的值判红并替用户改设计。
   // 那是一条待裁决的账（已登记），不是一条可以顺手抬高的门槛。
+  // Discord 亮档那一格顺带记下这条判据的边界：它的白卡上十二色 4.06~8.37 全过，
+  // 是八档里唯一一处"后排也在窗内"的亮底——但门禁仍按前排判，不因为它过就抬高门槛。
   const FLOOR = 4.0;
   const SIX = ['--c-s1', '--c-s2', '--c-s3', '--c-s4', '--c-s5', '--c-s6'];
   const HEX6 = /^#[0-9a-fA-F]{6}$/;
   for (const sel of [':root', 'body.dark-mode', ...THEME_BLOCKS]) {
     const rule = blockOf(sel);
     assert.ok(rule, `找不到 ${sel} 块`);
-    const bg = declOf(rule, '--bg');
-    assert.ok(bg, `${sel} 里没有 --bg，窗口无从算起`);
+    const back = subjectBack(sel);
+    assert.ok(back, `${sel} 里没有 --bg，也没有任何把 .subject-group 刷底的覆写，窗口无从算起`);
+    const backHex = hexInBlock(rule, back.value);
     // 不静默跳过：读不出来就是判红。透明底算不出确定读数（Class B 死锁），
     // 而故事 9 正要求科目色所落的底是实底——这里跳过等于把那条要求丢掉。
-    assert.ok(HEX6.test(bg.value), `${sel} 的 --bg 不是六位实色 hex（读到 ${bg.value}）：窗口断言要的是实底`);
+    assert.ok(backHex && HEX6.test(backHex),
+      `${sel} 的落底层（${back.from} = ${back.value}）不是六位实色 hex：窗口断言要的是实底`);
     const rows = [];
     const out = [];
     for (const p of SIX) {
       const d = declOf(rule, p);
       assert.ok(d, `${sel} 里 ${p} 不见了`);
       assert.ok(HEX6.test(d.value), `${sel} 的 ${p} 不是六位实色 hex（读到 ${d.value}）`);
-      const r = ratioOf(d.value, bg.value);
+      const r = ratioOf(d.value, backHex);
       rows.push(`${p} ${d.value}→${r.toFixed(2)}`);
       if (r < FLOOR) out.push(`${p} ${d.value} 只有 ${r.toFixed(2)}`);
     }
     assert.deepEqual(out, [],
-      `${sel} 的 --bg=${bg.value} 不在窗内：${out.join('、')}。六格读数 ${rows.join('  ')}`);
+      `${sel} 的科目色坐在 ${back.from}=${backHex} 上，不在窗内：${out.join('、')}。六格读数 ${rows.join('  ')}`);
+  }
+});
+
+test('§7(a)-8c Discord 亮档的内容层与顶栏确实刷在 --surface 上（8b 的落底层就从这里读）', () => {
+  // 为什么单独立一条，而不是只靠 8b 现推：删掉下面那条 `.subject-group` 覆写，8b 的基准会退回
+  // 灰桌 --bg，六色读数掉到 3.73~4.41，确实会响——但它报的是"某个颜色不在窗内"，
+  // 而真实发生的事是**一个 hex 都没动，只是卡片没了**。原因得由知道原因的那条断言来说。
+  // 与 005 那条"反向断言必须配一句正向的存在"同族：这里只看那两行在不在、写的是什么。
+  for (const sel of ['body.theme-discord .subject-group', 'body.theme-discord .topbar']) {
+    const rule = blockOf(sel);
+    assert.ok(rule, `${sel} 不见了——这一档的内容/顶栏会直接坐在裁决锚点 #ebedef 上，
+      而 8b 的基准跟着退回灰桌（六色 3.73~4.41 判红时请回看这里）`);
+    const d = declOf(rule, 'background');
+    assert.ok(d && /^var\(--surface\)$/.test(d.value.trim()),
+      `${sel} 的 background 不再是 var(--surface)（读到 ${d ? d.value : '（无）'}）：理由见 style.css 那两条覆写的注释`);
   }
 });
 
@@ -693,18 +752,21 @@ test('§7(a)-9c 浮层 α 有下限：--glass-alpha/--floor-alpha 亮档 ≥0.92
   assert.deepEqual(offenders, [], '浮层 α 低于实测下限（底账 §3）');
 });
 
-test('§7(a)-9d 玻璃档不重算任何 hex：十二色与该梯的锁死组逐字相等', () => {
-  // 出处：spec 故事 7/8 的"复用不重算"，工单 004 的验收第一条、005 的暗档半边。
-  // 判据写成**值相等**而不是"各自 ≥4:1"：达标由 --bg 落窗（§7(a)-8b）保证，
+test('§7(a)-9d 复用档不重算任何 hex：十二色与该梯的锁死组逐字相等', () => {
+  // 出处：spec 故事 7/8 的"复用不重算"，工单 004 的验收第一条、005 的暗档半边、Discord 两档的裁决半边。
+  // 判据写成**值相等**而不是"各自 ≥4:1"：达标由落底层落窗（§7(a)-8b）保证，
   // 而"这一档到底有没有偷偷新算一个 hex"只有相等性能回答。§7(a)-8b 绿、六色却被换过，
   // 是完全可能的一次误操作——那时窗口读数会跟着重新算绿，没人看得见颜色被换过。
   //
-  // 两张对照表按**梯**配，不是一张表比 :root：暗档玻璃的底是暗的，它要复用的是 `body.dark-mode`
-  // 那组亮科目色（001 实测暗档六色压暗档底 5.83~6.80 全过，于是把重算步骤整条删掉）。
+  // 两张对照表按**梯**配，不是一张表比 :root：暗档那几块的底是暗的，它们要复用的是 `body.dark-mode`
+  // 那组亮科目色（001 实测暗档六色压暗档底全过，于是把重算步骤整条删掉）。
   // 拿暗档去比 :root 会在第一格就判红，而那条红是假的。
+  // 标题原来写"玻璃档"：管的是同一件事——**任何一档都不许新算六色**，玻璃只是第一个受益者。
   const PAIRS = [
     ['body.theme-glass', ':root'],
     ['body.theme-glass.dark-mode', 'body.dark-mode'],
+    ['body.theme-discord', ':root'],
+    ['body.theme-discord.dark-mode', 'body.dark-mode'],
   ];
   for (const [sel, baseSel] of PAIRS) {
     const baseBlock = blockOf(baseSel);

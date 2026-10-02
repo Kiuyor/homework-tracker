@@ -1,11 +1,30 @@
+// ============ 日期工具（先于 state 定义：state 的 currentDate 就用它建） ============
+// 可注入时钟：测试要把"午夜之后"造出来，而 Date.now 不可伪造。全文件只此一处读时间。
+window.now = function () { return Date.now(); };
+
+// 本地午夜。**所属日是日期不是时刻**：currentDate 若带着加载时刻（10:23:45），
+// 「今天」与「现在这一刻」就是两个概念，跨午夜回位与前后翻页的进位都指着同一件事。
+function startOfDay(date) {
+  const d = new Date(date.getTime());
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// 日历日相等。全项目的日期比较只有这一处实现——原先 formatDisplay 里连写三段
+// 「formatDate(x) === formatDate(y)」，加一处比较就要再抄三段。
+window.sameDate = function (a, b) {
+  return window.formatDate(a) === window.formatDate(b);
+};
+
 // ============ State ============
 window.AppState = {
-  currentDate: new Date(),
+  currentDate: startOfDay(new Date(window.now())),
   homeworks: [],
   subjects: [],
   editingId: null,
   subjectPickId: null, // 科目选择器当前选中的科目（ADR-0011：只有六科，点不出来新名字）
   editingDeadline: null, // 编辑中的作业原始 deadline，用于「只改时间不改日期」
+  modalContextDate: null, // 模态打开那一刻的所属日快照：保存一律用它，不现读 currentDate（见 ui.js enterAddMode）
   deadlineOwnerDate: null, // 「当天/次日」的基准日 = 正在编辑条目的所属日（新建时为查看日）
   deadlineDayOffset: 0, // 0=当天 1=次日 null=原始 deadline 落在两档之外
   fontSize: 44,
@@ -19,7 +38,14 @@ window.AppState = {
   clockText: '', // 上次渲染的 HH:MM，避免每秒重复写 DOM
   offlineFailures: 0,  // 连续刷新失败次数（离线角标用）
   offlineShown: false, // 角标当前是否已显示，避免重复写 DOM
-  lastRenderSig: null, // 上次渲染时的输入签名，用于「数据没变就跳过重渲染」
+  // 上次渲染的输入签名（api.js「数据没变就跳过重渲染」）。保留：它是展示态 5 秒轮询下
+  // 唯一挡住「每 5 秒重放动画 + 反复强制同步布局」的机制，去掉即为性能回退。
+  // 已知代价：签名必须**逐个枚举**所有影响显示的输入，漏一项就成了"每 5 秒一次的静默不刷新"。
+  // 本轮审查把现有输入（date / viewMode / subjects / 每条作业六字段）逐一比对过，未发现漏项，
+  // 故不动它；但**新加任何影响渲染的 state 字段时，必须同时把它加进 api.js 的 renderSignature**。
+  lastRenderSig: null,
+  todayStr: null, // "今天"到底指哪一天（见 syncToday）：null = 还没校过基准
+  dateSyncTimer: null, // 「今天」校正器：每分钟一次，跨午夜才真的有动作
 };
 
 // ============ Date Helpers ============
@@ -36,16 +62,15 @@ window.getWeekday = function (date) {
 };
 
 window.formatDisplay = function (date) {
-  const today = new Date();
-  const todayStr = window.formatDate(today);
-  const tomorrow = new Date(today);
+  const today = startOfDay(new Date(window.now()));
+  const tomorrow = startOfDay(new Date(today.getTime()));
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const yesterday = new Date(today);
+  const yesterday = startOfDay(new Date(today.getTime()));
   yesterday.setDate(yesterday.getDate() - 1);
 
-  const diff = window.formatDate(date) === todayStr ? '今天' :
-    window.formatDate(date) === window.formatDate(tomorrow) ? '明天' :
-    window.formatDate(date) === window.formatDate(yesterday) ? '昨天' : '';
+  const diff = window.sameDate(date, today) ? '今天' :
+    window.sameDate(date, tomorrow) ? '明天' :
+    window.sameDate(date, yesterday) ? '昨天' : '';
   const dateStr = `${date.getMonth() + 1}月${date.getDate()}日`;
   return diff ? `${diff} ${dateStr} ${window.getWeekday(date)}` : `${dateStr} ${window.getWeekday(date)}`;
 };
@@ -59,7 +84,7 @@ window.dayWord = function (date) {
 };
 
 window.changeDate = function (delta) {
-  const newDate = new Date(window.AppState.currentDate);
+  const newDate = startOfDay(window.AppState.currentDate);
   newDate.setDate(newDate.getDate() + delta);
   window.AppState.currentDate = newDate;
   window.updateDateDisplay();
@@ -67,9 +92,44 @@ window.changeDate = function (delta) {
 };
 
 window.goToday = function () {
-  window.AppState.currentDate = new Date();
+  window.AppState.currentDate = startOfDay(new Date(window.now()));
   window.updateDateDisplay();
   window.loadHomeworks();
+};
+
+// 跨午夜回位（挂钟一跳，这面墙就整个换了内容）。
+// 教室机常年不关机、刷新（F5 落展示态）也常发生在两节课之间——「今天」若只在加载时算一次，
+// 第二天早上这面墙会安静地把**昨天**的作业当作今天讲一整节，而没有任何一处会响。
+// 判据是「页面默认跟着今天走」，不是「现在是不是午夜」——所以用状态量记一次读数，
+// 每分钟、每次页面重新可见时各校一次，不靠定时器恰好在零点醒来。
+// 返回"今天"是否变了（函数名与返回值同义；跨午夜而用户翻走了时也返回 true，只是视图不动）。
+window.syncToday = function () {
+  const state = window.AppState;
+  // 一次调用只读一次钟：跨午夜那一瞬被拆成两次读数的话，"今天"与"是否跟着今天走"
+  // 会用到两个不同的日子。
+  const today = new Date(window.now());
+  const todayStr = window.formatDate(today);
+  const baseline = state.todayStr;
+  const isFirst = baseline === null || baseline === undefined;
+
+  // 幂等：同一天、且视图的归属已经定过，就没有什么要做的。
+  // （首帧必须放行——见下面那条首帧纠偏。）
+  if (!isFirst && baseline === todayStr) {
+    state.todayStr = todayStr;
+    return false;
+  }
+
+  // **「是否跟着今天走」= 视图当前就在今天这一天**，以及首帧的默认跟随。
+  // 首帧的默认跟随不是想当然：currentDate 在**模块求值**时定下（本文件第 21 行），而第一次
+  // syncToday() 要等 init() 跑到（main.js）——两者之间若跨过午夜，视图就是"昨天"而基准还是 null。
+  // 那一刻没人翻过页（页面刚打开），所以必须判它"该跟"，否则这面墙会整天挂在昨天：
+  // 此后每分钟都被上面那条幂等挡回去，再不修正。verifier 的反例正是这一格。
+  const following = isFirst || window.sameDate(state.currentDate, today);
+  state.todayStr = todayStr;
+
+  if (following) window.goToday();      // 看着今天（或首帧）→ 跟到今天，顺带重拉数据
+  else window.updateDateDisplay();      // 用户特意翻到别的日子 → 尊重它，只更正"今天"这个词的指代
+  return true;
 };
 
 window.updateDateDisplay = function () {

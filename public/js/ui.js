@@ -274,6 +274,11 @@ function enterAddMode() {
   state.editingDeadline = null;
   state.subjectPickId = null; // 新建时不预选：默认"没选科目"，保存时挡住
   state.deadlineOwnerDate = window.formatDate(state.currentDate); // 「当天」= 正在查看的这一天
+  // 模态的所属日：打开那一刻从 currentDate 快照下来的日期，保存时一律用它。
+  // 为什么不能现读：顶栏那条日期导航在模态开着时针指点不到（overlay 盖在上面），
+  // 但键盘能——Tab 循环若有缺口，焦点可以退到顶栏、在日期钮上按 Enter 把视图翻走。
+  // 实测过这条路径（真浏览器），所以快照不是防御性冗余，是"所见即所存"的唯一保证。
+  state.modalContextDate = window.formatDate(state.currentDate);
   window.setDeadlineDay(0);
   dom.modalTitle.textContent = '添加作业';
   dom.editId.value = '';
@@ -281,21 +286,26 @@ function enterAddMode() {
 
 window.openAddModal = function () {
   var dom = window.AppDom;
+  window.rememberFocus();
   enterAddMode();
   window.renderSubjectSeg();
   dom.contentInput.value = '';
   var deadlineInput = document.getElementById('deadlineInput');
   if (deadlineInput) deadlineInput.value = '';
   dom.modalOverlay.classList.remove('hidden');
-  dom.contentInput.focus();
+  // 焦点交给模态本身（tabindex=-1），不落到"作业内容"上：软键盘不请自来的话，
+  // 半屏立刻被压掉，而人可能只是想看看。要打字时点一下那块最大的输入区即可。
+  window.focusModal();
 };
 
 window.openEditModal = function (hw) {
   var dom = window.AppDom;
   var state = window.AppState;
+  window.rememberFocus();
   state.editingId = hw.id;
   state.editingDeadline = hw.deadline || null; // 保留原日期，只允许改时间
   state.deadlineOwnerDate = hw.date;
+  state.modalContextDate = hw.date; // 改一条已存在的作业：所属日就是它自己那一天
   window.setDeadlineDay(window.deadlineDayOffsetOf(hw.deadline, hw.date));
   dom.modalTitle.textContent = hw.subject_name ? '编辑〈' + hw.subject_name + '〉' : '编辑作业';
   dom.editId.value = hw.id;
@@ -305,11 +315,13 @@ window.openEditModal = function (hw) {
   var deadlineInput = document.getElementById('deadlineInput');
   if (deadlineInput) deadlineInput.value = hw.deadline ? formatDeadlineInput(hw.deadline) : '';
   dom.modalOverlay.classList.remove('hidden');
-  dom.contentInput.focus();
+  window.focusModal();
 };
 
 window.closeModal = function () {
   window.AppDom.modalOverlay.classList.add('hidden');
+  // 焦点归还给打开模态的那颗钮，键盘用户不必从页首重新走一遍
+  window.restoreFocus();
 };
 
 // ============ 科目选择器（六科闭集，ADR-0011） ============
@@ -368,8 +380,8 @@ window.toggleDarkMode = function () {
 // 名单只有一份，就写在这条数组里——CSS 里的 body.theme-* 块由门禁 §7(a)-7c 与它双向
 // 对齐，抄进 index.html 的那一份迟早会和块不同名。whiteboard 是默认档且不加 class，
 // 所以「没选主题」时页面与本机制之前逐像素一致（spec 故事 2）。
-var THEME_NAMES = ['whiteboard', 'github', 'glass'];
-var THEME_LABELS = { whiteboard: '白板', github: 'GitHub', glass: '玻璃' };
+var THEME_NAMES = ['whiteboard', 'github', 'discord', 'glass'];
+var THEME_LABELS = { whiteboard: '白板', github: 'GitHub', discord: 'Discord', glass: '玻璃' };
 window.THEME_NAMES = THEME_NAMES;
 
 function validTheme(name) {
