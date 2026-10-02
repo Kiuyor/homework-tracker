@@ -704,3 +704,95 @@ test('24 缺的主科行下次启动被补回，且表外科目仍追加在六�
   assert.equal(db.get("SELECT COUNT(*) AS c FROM subjects WHERE name = '语文'").c, 1, '补齐不重复');
   assert.ok(db.get("SELECT id FROM subjects WHERE name = '天文'"), '用户自建科目不受补齐影响');
 });
+
+// ============ 缺陷修复回归（fix/2026-10-02，日期空间用 2032-02 以后，与上面各段隔开） ============
+
+// 科目 id 不能写死：上面「24 缺的主科行」删过语文再补回，AUTOINCREMENT 会给新 id。
+// 本段统一按名字现查——测试测的是路由行为，不是科目表的自增值。
+function subjectIdByName(name) {
+  return db.get('SELECT id FROM subjects WHERE name = ?', name).id;
+}
+
+test('DELETE 200 → GET 反映已删 → 同 (date, subject_id) 可重新 POST；DELETE 不存在 id → 404', async () => {
+  const D = '2032-02-01';
+  const hw = (await (await req('POST', '/api/homeworks', {
+    content: '将被删除的一条', date: D, subject_id: subjectIdByName('数学'),
+  })).json()).data;
+
+  const del = await req('DELETE', `/api/homeworks/${hw.id}`);
+  assert.equal(del.status, 200);
+
+  const after = await req('GET', `/api/homeworks?date=${D}`);
+  assert.deepEqual((await after.json()).data, [], 'GET 必须反映已删');
+
+  const re = await req('POST', '/api/homeworks', {
+    content: '删掉后重录的一条', date: D, subject_id: subjectIdByName('数学'),
+  });
+  assert.equal(re.status, 201, '删除后唯一索引必须放行同日同科的新一条');
+
+  const gone = await req('DELETE', `/api/homeworks/${hw.id}`);
+  assert.equal(gone.status, 404, '再删同一个 id（已不存在）→ 404');
+});
+
+test('POST content 非字符串(123) → 400，文案说清"必须为文本"', async () => {
+  const res = await req('POST', '/api/homeworks', {
+    content: 123, date: '2032-03-01', subject_id: subjectIdByName('语文'),
+  });
+  assert.equal(res.status, 400, '数字不该静默变形落库，更不该炸 500');
+  assert.match((await res.json()).error, /文本/);
+});
+
+test('PUT content 空字符串 → 400（修复前 200 并把正文清空）', async () => {
+  const hw = await createHomework({ date: '2032-03-02', subject_id: subjectIdByName('语文') });
+  const res = await req('PUT', `/api/homeworks/${hw.id}`, { content: '' });
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /不能为空/);
+  assert.equal(db.get('SELECT content FROM homeworks WHERE id = ?', hw.id).content,
+    '基础作业', '被拒的写入不做部分修改');
+});
+
+test('POST 畸形 JSON body → 400（不是 500），文案为人话', async () => {
+  const res = await fetch(base + '/api/homeworks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{"content": 这不是合法JSON',
+  });
+  assert.equal(res.status, 400);
+  const body = await res.json();
+  assert.equal(body.success, false);
+  assert.match(body.error, /JSON/);
+});
+
+test('POST deadline 早于 date → 400', async () => {
+  const res = await req('POST', '/api/homeworks', {
+    content: 'x', date: '2032-04-02', subject_id: subjectIdByName('语文'), deadline: '2032-04-01 08:00:00',
+  });
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /早于/);
+  assert.equal(db.get("SELECT COUNT(*) AS n FROM homeworks WHERE date = '2032-04-02'").n, 0,
+    '被拒的写入不落库');
+});
+
+test('PUT deadline 早于该条所属日 → 400；与 date 一起提交时以新 date 为基准', async () => {
+  const hw = await createHomework({ date: '2032-05-02', subject_id: subjectIdByName('语文') });
+
+  const res = await req('PUT', `/api/homeworks/${hw.id}`, { deadline: '2032-05-01 08:00:00' });
+  assert.equal(res.status, 400, '死线落在所属日之前');
+
+  const res2 = await req('PUT', `/api/homeworks/${hw.id}`, {
+    date: '2032-06-10', deadline: '2032-06-09 08:00:00',
+  });
+  assert.equal(res2.status, 400, '同请求改期时，死线要对着新所属日比');
+});
+
+test('deadline 与 date 同日/晚于 date → 放行（不误伤）', async () => {
+  const eng = subjectIdByName('英语');
+  const same = await req('POST', '/api/homeworks', {
+    content: 'x', date: '2032-07-01', subject_id: eng, deadline: '2032-07-01 20:00:00',
+  });
+  assert.equal(same.status, 201, '同日死线合法');
+  const later = await req('POST', '/api/homeworks', {
+    content: 'x', date: '2032-07-02', subject_id: eng, deadline: '2032-07-03 07:30:00',
+  });
+  assert.equal(later.status, 201, '次日死线合法');
+});

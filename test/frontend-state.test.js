@@ -109,13 +109,14 @@ test('同一天重复调用是幂等的，不产生第二次重拉', () => {
   assert.equal(calls.reload, 0);
 });
 
-// （"视图停在别的日子、跨午夜后不被抢走"由上一条用例覆盖：
-//   syncToday 判的是"视图是不是今天"，所以停在昨天与停在前天走的是同一条分支。）
+// （"视图停在别的日子、跨午夜后不被抢走"由下一条用例覆盖：
+//   跟随判据是 userNavigated，翻到哪天与被不被抢走是同一件事的两面。）
 
 test('跨午夜：用户特意翻到别的日子时不动视图，只更正「今天」的指代', () => {
   const calls = stubRenderSideEffects();
   state.todayStr = '2026-09-30';
-  state.currentDate = localDate(2026, 9, 28); // 科代表把视图翻到了后天
+  state.userNavigated = true;                  // 科代表按过左右箭头（主动离开跟随态）
+  state.currentDate = localDate(2026, 9, 28);  // 把视图翻到了后天
   clockAt(localDate(2026, 10, 1, 0, 5));
   assert.equal(window.syncToday(), true);
   assert.equal(iso(state.currentDate), '2026-09-28', '别把正在看的这一天抢走');
@@ -146,6 +147,31 @@ test('同一天重复调用不会把用户翻走的视图拽回来', () => {
   assert.equal(iso(state.currentDate), '2026-09-28', '每分钟一次的校正器不许把视图拽回');
   assert.equal(calls.reload, 0);
   assert.equal(calls.display, 0, '什么都没变，不该重画');
+});
+
+test('跨午夜：正看着今天时视图跟到新一天（跟随判据是 userNavigated，不是 sameDate）', () => {
+  // 修复前的反例：跨午夜瞬间 currentDate 还停在旧"今天"，sameDate(currentDate, today)
+  // 恒为 false——正看着今天的人被误判成"翻走了"，视图从此冻在昨天的作业上。
+  const calls = stubRenderSideEffects();
+  state.todayStr = '2026-09-30';
+  state.userNavigated = false;                 // 没人翻过页（挂展示态的常态）
+  state.currentDate = localDate(2026, 9, 30);  // 视图停在旧"今天"
+  clockAt(localDate(2026, 10, 1, 0, 0, 30));   // 跨过午夜
+  assert.equal(window.syncToday(), true);
+  assert.equal(state.todayStr, '2026-10-01');
+  assert.equal(iso(state.currentDate), '2026-10-01', '正看着今天就该跟到新一天');
+  assert.equal(calls.reload, 1);
+});
+
+test('changeDate 置 userNavigated=true、goToday 清回 false（跟随态的一进一出）', () => {
+  clockAt(localDate(2026, 9, 30, 10, 0));
+  stubRenderSideEffects();
+  state.userNavigated = false;
+  state.currentDate = localDate(2026, 9, 30);
+  window.changeDate(1);
+  assert.equal(state.userNavigated, true, '主动翻页 = 离开跟随态');
+  window.goToday();
+  assert.equal(state.userNavigated, false, '点「今天」= 回到跟随态');
 });
 
 test('跨午夜：日期标签由「今天」改口径为具体日期（同一根日期上的相对词会漂）', () => {

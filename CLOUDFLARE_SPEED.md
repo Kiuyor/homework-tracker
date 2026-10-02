@@ -1,5 +1,7 @@
 # 🌐 使用 Cloudflare 优化 Vercel 网站国内访问速度
 
+> ⚠️ 历史方案（已否定）：Vercel 路线见 DEPLOY_ALIYUN_FC.md 的否决结论，本文仅存档。
+
 > 适用场景：Vercel 部署 + Cloudflare 域名管理，优化国内用户访问体验
 
 ---

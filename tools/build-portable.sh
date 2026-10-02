@@ -75,6 +75,9 @@ for f in server.js db.js package.json; do
 done
 cp -r "$ROOT/api" "$DIST/api"
 cp -r "$ROOT/public" "$DIST/public"
+# 备份工具单独带上一份：包里的 backup.bat 指着它（不拷整个 tools/，构建脚本本身不进包）。
+mkdir -p "$DIST/tools"
+cp "$ROOT/tools/backup.js" "$DIST/tools/backup.js"
 
 # ---------- 4. 生产依赖 ----------
 echo "==> 拷贝生产依赖"
@@ -126,6 +129,25 @@ BATEOF
 
 # bat 需 CRLF 换行（正文已全 ASCII，不再需要转码）
 sed -i 's/\r$//; s/$/\r/' "$DIST/start.bat"
+
+# 备份脚本（正文同 start.bat：全 ASCII，中文说明交给 README.txt）
+cat > "$DIST/backup.bat" <<'BATEOF'
+@echo off
+cd /d "%~dp0"
+title Homework Wall - Backup
+
+echo.
+echo   Backing up homework.db ...
+echo.
+
+"%~dp0node.exe" tools\backup.js
+
+echo.
+echo   Done. The backup file is saved in this folder.
+echo   Copy it somewhere safe.
+pause
+BATEOF
+sed -i 's/\r$//; s/$/\r/' "$DIST/backup.bat"
 
 # ---------- 7. 使用说明 ----------
 echo "==> 生成使用说明"
@@ -217,6 +239,9 @@ cat > "$DIST/README.txt" <<'DOCEOF'
   文件夹里的 homework.db 就是全部数据（SQLite 单文件，非 WAL 模式）。
   备份 = 复制这个文件；换电脑 = 把它拷到新文件夹根目录即可。
   （建议在没人正在录入作业时复制：正在写入的那一瞬间复制可能拿到不完整的一份。）
+  更省事的办法：随时可双击 backup.bat 备份（任意时刻都安全）——
+  它用的是数据库在线备份，哪怕服务正在写入也不会拿到半份损坏数据；
+  备份文件落在同一个文件夹里，文件名带日期时间，拷走或改名随意。
   这个包不含 homework.db：第一次运行会自动创建一个含预设科目
   （语文/数学/…/生物）、0 条作业的空库，所以上课第一次打开是满墙「未布置」，不是坏了。
   六个主科每次启动都会被补齐回来（只补没有的，表外科目和改过的名字都不动），
@@ -248,8 +273,10 @@ cat > "$DIST/README.txt" <<'DOCEOF'
 【文件说明】
   node.exe        Node 运行时（约 92MB）
   start.bat       双击启动
+  backup.bat      双击备份（随时可点，正在录入时也安全）
   server.js       服务入口
   api/  public/   后端接口与前端页面
+  tools/          备份工具（backup.bat 调它）
   db.js           数据库封装
   node_modules/   依赖库（含 better-sqlite3 原生模块）
   BUILD.txt       这个包是哪个版本、什么时候做的
@@ -316,6 +343,8 @@ test -f "$DIST/node_modules/better-sqlite3/build/Release/better_sqlite3.node" ||
 # 恰好不含本轮唯一实质改动的两处——前端文件与 README.txt。
 test -f "$DIST/README.txt"  || { echo "缺少 README.txt" >&2; exit 1; }
 test -f "$DIST/BUILD.txt"   || { echo "缺少 BUILD.txt" >&2; exit 1; }
+test -f "$DIST/backup.bat"  || { echo "缺少 backup.bat" >&2; exit 1; }
+test -f "$DIST/tools/backup.js" || { echo "缺少 tools/backup.js" >&2; exit 1; }
 # 归一那步的回判：按字节数 BOM / CRLF / 裸 LF，不看上一步有没有报错——自报成功不是读数。
 node -e "
 const fs=require('fs');
@@ -358,9 +387,12 @@ if(miss.length){console.error('    名单里的档名说明书没提：'+miss.jo
 console.log('    主题档数与档名同源: '+names.length+' 套 · '+labels.join('/'));
 " "$DIST/public/js/ui.js" "$DIST/README.txt" || exit 1
 grep -q "BUILD_COMMIT=\|版本标识" "$DIST/BUILD.txt" || { echo "BUILD.txt 缺版本标识" >&2; exit 1; }
-# start.bat 正文必须全 ASCII：cmd 按控制台代码页读它，非 ASCII 字节在代码页不对的机器上就是乱码。
+# start.bat / backup.bat 正文必须全 ASCII：cmd 按控制台代码页读它，非 ASCII 字节在代码页不对的机器上就是乱码。
 if sed 's/\r$//' "$DIST/start.bat" | LC_ALL=C grep -q '[^ -~]'; then
   echo "start.bat 正文含非 ASCII 字节 —— 会在非中文代码页的机器上乱码" >&2; exit 1
+fi
+if sed 's/\r$//' "$DIST/backup.bat" | LC_ALL=C grep -q '[^ -~]'; then
+  echo "backup.bat 正文含非 ASCII 字节 —— 会在非中文代码页的机器上乱码" >&2; exit 1
 fi
 echo "    OK"
 
@@ -398,6 +430,8 @@ if [ -n "$LIST" ]; then
   for f in homework-tracker-portable/README.txt \
            homework-tracker-portable/BUILD.txt \
            homework-tracker-portable/start.bat \
+           homework-tracker-portable/backup.bat \
+           homework-tracker-portable/tools/backup.js \
            homework-tracker-portable/node.exe \
            homework-tracker-portable/node_modules/better-sqlite3/build/Release/better_sqlite3.node; do
     $LIST "$ZIP" 2>/dev/null | grep -qxF "$f" || { echo "压缩包里缺少 $f" >&2; exit 1; }

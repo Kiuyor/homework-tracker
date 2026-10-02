@@ -1,6 +1,5 @@
 // ============ DOM Selectors ============
 window.$ = function (sel) { return document.querySelector(sel); };
-window.$$ = function (sel) { return document.querySelectorAll(sel); };
 
 // ============ DOM References ============
 window.AppDom = {

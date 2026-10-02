@@ -100,6 +100,8 @@
   // 展示态下 resetEditIdle 自己会 no-op，不留记账。
   document.addEventListener('pointerdown', window.resetEditIdle, true);
   document.addEventListener('keydown', window.resetEditIdle, true);
+  // 滚轮也算活跃（触屏滚墙/外接鼠标都能滚）：passive 保证滚动性能不被监听器拖累。
+  document.addEventListener('wheel', window.resetEditIdle, { passive: true, capture: true });
 
   // Font size slider
   var fontSizeSlider = document.getElementById('fontSizeSlider');

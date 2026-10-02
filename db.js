@@ -65,6 +65,15 @@ function transaction(fn) {
   };
 }
 
+/**
+ * 在线备份到目标路径（better-sqlite3 的 db.backup API）。
+ * 备份期间源库照常可读写，任意时刻执行都安全——tools/backup.js 用它。
+ * 返回 Promise，落库完成后 resolve。
+ */
+function backup(destPath) {
+  return getDb().backup(destPath);
+}
+
 function initTables() {
   const db = getDb();
 
@@ -130,11 +139,12 @@ function initTables() {
     `);
   }
 
-  // 迁移：添加 deadline 列
-  try {
+  // 迁移：添加 deadline 列。先探后改（与上面唯一索引的探测风格一致）：
+  // 以前的裸 ALTER + 空 catch 把"列已存在"和真正的 SQL 错误一起吞了——
+  // 后者被吞掉时服务带着缺列的 schema 继续跑，第一句写入才在别处炸出来。
+  const cols = db.pragma('table_info(homeworks)');
+  if (!cols.some((c) => c.name === 'deadline')) {
     db.exec(`ALTER TABLE homeworks ADD COLUMN deadline TEXT DEFAULT NULL`);
-  } catch (e) {
-    // 列已存在，忽略
   }
 }
 
@@ -179,4 +189,4 @@ function close() {
   }
 }
 
-module.exports = { all, get, run, pragma, transaction, ensureInit, close, SUBJECT_PRIORITY };
+module.exports = { all, get, run, pragma, transaction, backup, ensureInit, close, SUBJECT_PRIORITY };

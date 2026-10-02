@@ -46,6 +46,9 @@ window.AppState = {
   lastRenderSig: null,
   todayStr: null, // "今天"到底指哪一天（见 syncToday）：null = 还没校过基准
   dateSyncTimer: null, // 「今天」校正器：每分钟一次，跨午夜才真的有动作
+  userNavigated: false, // 用户是否主动翻过页（changeDate 置 true，goToday 清回 false）。
+  // syncToday 的跟随判据靠它：跨午夜瞬间 currentDate 还停在旧今天，「视图在不在这天」
+  // 答不了"用户想不想跟着走"；只有"用户有没有主动离开跟随态"这个事实跨午夜仍然有效。
 };
 
 // ============ Date Helpers ============
@@ -87,12 +90,14 @@ window.changeDate = function (delta) {
   const newDate = startOfDay(window.AppState.currentDate);
   newDate.setDate(newDate.getDate() + delta);
   window.AppState.currentDate = newDate;
+  window.AppState.userNavigated = true; // 主动翻页 = 主动离开跟随态（syncToday 据此不再抢视图）
   window.updateDateDisplay();
   window.loadHomeworks();
 };
 
 window.goToday = function () {
   window.AppState.currentDate = startOfDay(new Date(window.now()));
+  window.AppState.userNavigated = false; // 点「今天」= 回到跟随态
   window.updateDateDisplay();
   window.loadHomeworks();
 };
@@ -119,12 +124,15 @@ window.syncToday = function () {
     return false;
   }
 
-  // **「是否跟着今天走」= 视图当前就在今天这一天**，以及首帧的默认跟随。
+  // **「是否跟着今天走」= 用户没有主动翻过页**（以及首帧的默认跟随）。
+  // 不能判 sameDate(currentDate, today)：跨午夜那一瞬 currentDate 还停在旧"今天"，
+  // 同日比较恒为 false——正看着今天的人反而被误判成"翻走了"，视图从此冻在昨天。
+  // 「用户有没有主动离开跟随态」（userNavigated）是跨午夜仍然成立的事实，所以判它。
   // 首帧的默认跟随不是想当然：currentDate 在**模块求值**时定下（本文件第 21 行），而第一次
   // syncToday() 要等 init() 跑到（main.js）——两者之间若跨过午夜，视图就是"昨天"而基准还是 null。
   // 那一刻没人翻过页（页面刚打开），所以必须判它"该跟"，否则这面墙会整天挂在昨天：
   // 此后每分钟都被上面那条幂等挡回去，再不修正。verifier 的反例正是这一格。
-  const following = isFirst || window.sameDate(state.currentDate, today);
+  const following = isFirst || !state.userNavigated;
   state.todayStr = todayStr;
 
   if (following) window.goToday();      // 看着今天（或首帧）→ 跟到今天，顺带重拉数据

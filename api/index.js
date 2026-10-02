@@ -80,6 +80,15 @@ function conflictError(date, subjectName) {
   };
 }
 
+// SQLITE_BUSY：库文件被别的进程锁住了（多半是又起了一个服务实例，或正被别的程序打开）。
+// busy_timeout 已给过 5 秒（db.js），还忙说明对方长时间占着——500「服务器内部错误」
+// 会让人以为服务坏了，给一句能行动的话。返回 true 表示已应答，调用方直接 return。
+function replyBusyIfBusy(err, res) {
+  if (!err || err.code !== 'SQLITE_BUSY') return false;
+  res.status(503).json({ success: false, error: '数据库正被其他程序占用，请稍后重试' });
+  return true;
+}
+
 // 校验 "YYYY-MM-DD"：格式合法且日期真实存在（拒绝 2026-13-45 之类）
 function isValidDate(s) {
   if (typeof s !== 'string' || !DATE_RE.test(s)) return false;
@@ -132,6 +141,7 @@ app.get('/api/subjects', (req, res) => {
     );
     res.json({ success: true, data: subjects });
   } catch (err) {
+    if (replyBusyIfBusy(err, res)) return;
     console.error('获取科目失败:', err);
     res.status(500).json({ success: false, error: '获取科目失败' });
   }
@@ -165,6 +175,7 @@ app.get('/api/homeworks', (req, res) => {
     const homeworks = db.all(sql, ...params);
     res.json({ success: true, data: homeworks });
   } catch (err) {
+    if (replyBusyIfBusy(err, res)) return;
     console.error('获取作业失败:', err);
     res.status(500).json({ success: false, error: '获取作业失败' });
   }
@@ -187,12 +198,24 @@ app.post('/api/homeworks', (req, res) => {
       return res.status(400).json({ success: false, error: '内容和日期为必填项' });
     }
 
+    // content 必须是字符串：数字 123 会静默变形（库列是 TEXT，落库形态随驱动而异），
+    // 对象/数组则会在 .length 或绑定参数处炸成 500——类型问题该在门口用 400 说清。
+    if (typeof content !== 'string') {
+      return res.status(400).json({ success: false, error: '作业内容必须为文本' });
+    }
+
     if (!isValidDate(date)) {
       return res.status(400).json({ success: false, error: '日期格式必须为 YYYY-MM-DD' });
     }
 
     if (deadline !== undefined && deadline !== null && deadline !== '' && !isValidDeadline(deadline)) {
       return res.status(400).json({ success: false, error: 'deadline 格式必须为 YYYY-MM-DD HH:MM:SS' });
+    }
+
+    // 跨字段：截止时间的日期部分不能早于布置日期。两边都是 YYYY-MM-DD，
+    // 字典序就是日历序，直接比较即可。
+    if (typeof deadline === 'string' && deadline !== '' && deadline.slice(0, 10) < date) {
+      return res.status(400).json({ success: false, error: '截止时间不能早于布置日期' });
     }
 
     if (content.length > MAX_CONTENT_LEN) {
@@ -252,6 +275,7 @@ app.post('/api/homeworks', (req, res) => {
     }
     res.status(201).json({ success: true, data: homework });
   } catch (err) {
+    if (replyBusyIfBusy(err, res)) return;
     console.error('添加作业失败:', err);
     res.status(500).json({ success: false, error: '添加作业失败' });
   }
@@ -276,7 +300,12 @@ app.put('/api/homeworks/:id', (req, res) => {
     const params = [];
 
     if (content !== undefined) {
-      if (typeof content !== 'string' || content.length > MAX_CONTENT_LEN) {
+      // 类型/空值与超长是两件事，分开说：前者是"没给内容"，后者是"内容太长"。
+      // 空串也拒——PUT 把正文清空等于删掉这条作业的意义，该走 DELETE。
+      if (content === null || typeof content !== 'string' || content.trim() === '') {
+        return res.status(400).json({ success: false, error: '作业内容不能为空且必须为文本' });
+      }
+      if (content.length > MAX_CONTENT_LEN) {
         return res.status(400).json({ success: false, error: '作业内容不能超过5000字' });
       }
       updates.push('content = ?'); params.push(content);
@@ -302,6 +331,11 @@ app.put('/api/homeworks/:id', (req, res) => {
       if (deadline === null || deadline === '') {
         updates.push('deadline = ?'); params.push(null);
       } else if (isValidDeadline(deadline)) {
+        // 跨字段（与 POST 同一条规则）：基准是这条作业的最终所属日——
+        // 本请求同时改了 date 时，effDate 已在上面换成新值。
+        if (deadline.slice(0, 10) < effDate) {
+          return res.status(400).json({ success: false, error: '截止时间不能早于布置日期' });
+        }
         updates.push('deadline = ?'); params.push(deadline);
       } else {
         return res.status(400).json({ success: false, error: 'deadline 格式必须为 YYYY-MM-DD HH:MM:SS' });
@@ -347,6 +381,7 @@ app.put('/api/homeworks/:id', (req, res) => {
 
     res.json({ success: true, data: homework });
   } catch (err) {
+    if (replyBusyIfBusy(err, res)) return;
     console.error('修改作业失败:', err);
     res.status(500).json({ success: false, error: '修改作业失败' });
   }
@@ -365,6 +400,7 @@ app.delete('/api/homeworks/:id', (req, res) => {
     db.run('DELETE FROM homeworks WHERE id = ?', id);
     res.json({ success: true, message: '删除成功' });
   } catch (err) {
+    if (replyBusyIfBusy(err, res)) return;
     console.error('删除作业失败:', err);
     res.status(500).json({ success: false, error: '删除作业失败' });
   }
@@ -382,6 +418,11 @@ app.get('*', (req, res) => {
 
 // Global error handler
 app.use((err, req, res, next) => {
+  // 请求体不是合法 JSON：body-parser 在进入路由前就抛了，这是客户端的错不是服务的错，
+  // 给 400 与一句人话，而不是让"服务器内部错误"背锅。
+  if (err && err.type === 'entity.parse.failed') {
+    return res.status(400).json({ success: false, error: '请求体不是合法 JSON' });
+  }
   console.error('未捕获错误:', err);
   res.status(500).json({ success: false, error: '服务器内部错误' });
 });

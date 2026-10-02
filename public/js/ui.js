@@ -7,7 +7,9 @@ function subjectColor(name) {
   // 按科目在 state.subjects 中的序号取色 → 同一科目跨编辑/展示模式配色稳定
   var subs = (window.AppState && window.AppState.subjects) || [];
   var idx = subs.findIndex(function (s) { return s.name === name; });
-  if (idx === -1) idx = Object.keys(_colorCache).length; // 不在 state.subjects 里（首轮未到位）→ 顺延取色
+  // 未知名（subjects 尚未到位 / 历史表外科目被删）只给默认色、不写入缓存：
+  // 缓存它会把"那一刻不知道"钉成永久事实，等 subjects 到位后配色也不再更新。
+  if (idx === -1) return 'var(--c-s1)';
   _colorCache[name] = 'var(--c-s' + (idx % SUBJECT_COLOR_COUNT + 1) + ')';
   return _colorCache[name];
 }
